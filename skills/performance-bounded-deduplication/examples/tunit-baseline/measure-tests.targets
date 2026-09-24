@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Injects the measurement sources into every test project for one build, without touching the repo:
+
+    dotnet build <solution> -c Release -p:CustomAfterMicrosoftCommonTargets=/abs/path/measure-tests.targets
+    MEASURE_TRACE_DIRECTORY=/tmp/traces taskset -c 0-6 nice -n -20 dotnet test <solution> -c Release --no-build
+
+  Point the verifier override (the class that creates the analyzer driver) at TestTraceSession.BeginAnalysis and
+  EndAnalysis by swapping the project's verifier file for an instrumented copy, as the second ItemGroup shows.
+-->
+<Project>
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <PackageReference Include="Microsoft.Diagnostics.NETCore.Client" VersionOverride="0.2.553101" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" VersionOverride="3.2.5" />
+  </ItemGroup>
+  <Target Name="InstrumentTests" BeforeTargets="CoreCompile" Condition="'$(IsTestProject)' == 'true'">
+    <ItemGroup>
+      <Compile Include="$(MSBuildThisFileDirectory)MeasurementEvents.cs" />
+      <Compile Include="$(MSBuildThisFileDirectory)TestTraceSession.cs" />
+    </ItemGroup>
+    <ItemGroup>
+      <Compile Remove="@(Compile)" Condition="'%(Compile.Filename)%(Compile.Extension)' == 'CSharpAnalyzerVerifier`1+Test.cs'" />
+      <Compile Include="$(MSBuildThisFileDirectory)InstrumentedAnalyzerVerifier.cs" Condition="Exists('$(MSBuildThisFileDirectory)InstrumentedAnalyzerVerifier.cs')" />
+    </ItemGroup>
+  </Target>
+</Project>
