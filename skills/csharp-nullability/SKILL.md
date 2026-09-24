@@ -130,6 +130,8 @@ class Person
 }
 ```
 
+For types a serializer fills, `required` also changes the wire contract. `System.Text.Json` throws when a `required` property is missing from the JSON, so don't add it just to satisfy the compiler. When unsure, make the member nullable and handle a missing value where the object is used (see `csharp-nullable-migration` and `csharp-json-source-generation`).
+
 ## Generics: `T?` and `notnull`
 
 - **Unconstrained `T?`** in a generic method/type means "if `T` is a reference type, this can be null; if `T` is a value type, `T?` is `Nullable<T>`." The compiler tracks both correctly, but it means you can't treat `T?` as uniformly "reference type made nullable" — check `default(T) is null` semantics don't apply until `T` is known.

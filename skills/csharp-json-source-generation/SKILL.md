@@ -215,6 +215,13 @@ discriminator and deserializes back to the concrete `CourierShipment` type via
 - **Records/init/required**: source generation fully supports positional records, `init` setters,
   and `required` members — verified a `record` with `required int X { get; init; }` members
   serializes/deserializes correctly through a generated context with no extra attributes needed.
+- **`required` means "must be in the JSON".** Deserialization throws `JsonException` when a
+  `required` property is missing from the document, even if its type is nullable. Don't add
+  `required` to satisfy the nullable compiler: when in doubt, make reference-typed members nullable
+  and handle missing values where each type is consumed. Conversely, a non-nullable `string` quietly
+  accepts a JSON `null` unless you set `RespectNullableAnnotations = true` (on
+  `[JsonSourceGenerationOptions]` or `JsonSerializerOptions`), which makes it throw. See
+  `csharp-nullable-migration`.
 - **Custom converters**: a `JsonConverter<T>` you write by hand works unchanged under source
   generation — apply it with `[JsonConverter]` on the type/property, or add it to
   `JsonSourceGenerationOptions.Converters`/the options' `Converters` list. The generator emits code

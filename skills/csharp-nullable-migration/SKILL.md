@@ -116,7 +116,8 @@ private string _name;
 [MemberNotNull(nameof(_name))]
 public void Initialize(string name) => _name = name;
 
-// (b) must be supplied by the caller at construction, never legitimately null:
+// (b) must be supplied by the caller at construction, never legitimately null
+//     (not for types a JSON deserializer fills; see "Deserialized/DTO types" below):
 public required string Name { get; init; }
 
 // (c) computed on first use, absent before that — genuinely late, not a bug:
@@ -146,7 +147,12 @@ Below is triage by warning code — what it usually means, and the fix vs. the "
 Other per-site judgement calls that show up as these codes but need extra context:
 
 - **`Dictionary.TryGetValue` / `FirstOrDefault()` results** — `TryGetValue`'s `out` is correctly `[MaybeNullWhen(false)]` already in the BCL; the warning tells you the code isn't checking the bool/null before use. `FirstOrDefault()` on a reference-typed sequence returns `T?` honestly (empty sequence → null) — don't `!` it, either check or use `First()` if empty should throw.
-- **Deserialized/DTO types** — a JSON/DB-mapped type's properties are either `required` (must be present) or genuinely optional (`?` with the deserializer allowed to leave them null). Read the schema/contract, not just the C# — a `required` C# property doesn't stop a deserializer from producing null if the source document omits a field and the serializer isn't configured to enforce it.
+- **Deserialized/DTO types: default to nullable, not `required`.** For types that `System.Text.Json` fills, `required` is not a nullability tool. It is a wire-format contract: deserialization throws `JsonException` ("missing required properties") whenever the property is absent from the JSON, even when the property type is nullable. Adding it during a migration turns every payload that omits the field (older clients, partial updates, other producers, stored documents) into a runtime failure the migration never exercised. The reverse gap also exists: by default a non-nullable `string` property accepts a JSON `null` without complaint, unless the context or options set `RespectNullableAnnotations = true`. So for any reference-typed DTO member you can't prove is always present and non-null in every document:
+  - Make it nullable (`string?`, `List<T>?`) and leave off `required`. This matches what the wire can actually send.
+  - Deal with the consequences per type afterwards. Where each object is consumed, decide whether a missing value gets a default, gets validated at the boundary with a clear error, or is a real optional state. That is a per-object analysis done by reading how each type is used, not a rewriter pass.
+  - Use `required` on a JSON type only when the contract genuinely rejects documents without the field, and you've confirmed every producer sends it.
+
+  This applies to other serializers and ORMs that populate objects through setters too: check what each one does with missing and null values before annotating.
 - **Events/delegates** — a nullable event field (`public event EventHandler? Changed;`) is usually correct (no subscribers yet); invoking it needs `Changed?.Invoke(...)`, not a non-null assertion.
 - **Interop/reflection** — `Type.GetProperty`, `Activator.CreateInstance`, P/Invoke return types are often legitimately nullable and the compiler is right to warn; don't blanket-`!` reflection call sites, check what the specific API's real contract is (some do promise non-null given valid input; most don't).
 - **API contract changes that break callers** — annotating a public member's nullability is a source (and sometimes binary-compatible-but-behaviorally-different) change for every external caller. For a published/shipped API, that's a deliberate versioning decision, not something a migration pass should make silently — flag it for review rather than auto-annotating public surface you don't control the consumers of.
@@ -225,4 +231,5 @@ This is the shape to expect from a real rewriter pass: it closes the mechanical 
 - [ ] Every remaining warning triaged by reading intent against the table above, not pattern-matched to a generic fix
 - [ ] Overrides/interface implementations reconciled at the contract level, not per-override
 - [ ] Public API nullability changes flagged for deliberate review, not auto-annotated
+- [ ] Deserialized (System.Text.Json) types use nullable reference members, not `required`, unless every producer is confirmed to send the field; missing values handled per type where consumed
 - [ ] Tests run (not just build) after every pass; fanned-out triage workers verified against the real gate, not self-reports
