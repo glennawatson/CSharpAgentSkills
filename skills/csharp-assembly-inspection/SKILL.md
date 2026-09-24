@@ -1,6 +1,6 @@
 ---
 name: csharp-assembly-inspection
-description: Use when a C#/.NET question is about the built artifact rather than the source: manifest resources, assembly references, what types or members actually shipped, whether a NuGet package still carries PRI/resource payloads, or whether the compiled surface matches the code. Prefer a throwaway single-file `dotnet run inspect.cs` tool using `System.Reflection.Metadata` and `PEReader` for read-only ECMA inspection; use `System.Reflection` only when runtime-visible type/member details are required.
+description: Use when a C#/.NET question is about the built artifact rather than the source, such as manifest resources, assembly references, what types or members actually shipped, whether a NuGet package still carries PRI/resource payloads, or whether the compiled surface matches the code. Prefer a throwaway single-file `dotnet run inspect.cs` tool using `System.Reflection.Metadata` and `PEReader` for read-only ECMA inspection; use `System.Reflection` only when runtime-visible type/member details are required.
 ---
 
 # Compiled artifact inspection (.NET)

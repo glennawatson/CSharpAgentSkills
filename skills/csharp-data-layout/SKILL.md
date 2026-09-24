@@ -1,6 +1,7 @@
 ---
 name: csharp-data-layout
 description: Use when designing or reviewing C#/.NET data structures for cache-coherent, allocation-light access — struct-of-arrays vs array-of-structs for loops, struct field ordering, flat data instead of inheritance, static helpers that carry only the memory they touch. The default design approach for production code in these programs (most non-test code here is performance-sensitive), not a hot-path-only exception.
+---
 
 # Cache-coherent data layout (C#)
 
