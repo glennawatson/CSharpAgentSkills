@@ -1,11 +1,13 @@
 ---
 name: csharp-language-versions
-description: Use before reaching for any C# 12–15 language feature — how to find the effective LangVersion for a project (TargetFramework default, explicit LangVersion, Directory.Build.props, file-based apps), a feature-by-version reference table, multi-targeting/polyfill caveats for older TFMs, and why you never raise LangVersion or retarget a project just to unlock a feature.
+description: Use before reaching for any C# 12–15 language feature — how to find the effective LangVersion for a project (TargetFramework default, explicit LangVersion, Directory.Build.props, file-based apps), a feature-by-version reference table, multi-targeting/polyfill caveats for older TFMs, and treating LangVersion/TargetFramework changes as deliberate repo-level decisions rather than side effects of one change.
 ---
 
 # Language versions — know what the project actually compiles with
 
 C# version is a **property of the project**, not of the SDK installed on the machine. Having a newer SDK on the machine does not mean a given project compiles with a newer C# version — check before using a feature, every time you're not sure.
+
+**`LangVersion` (a compiler setting) and `TargetFramework` (a runtime/BCL setting) are independent knobs.** The SDK picks a default `LangVersion` from the TFM, but nothing stops you from setting `<LangVersion>latest</LangVersion>` on `netstandard2.0` or `net4x` — the compiler will emit C# 15 syntax into an old-runtime assembly. Whether it *runs* depends entirely on whether the feature needs a runtime-looked-up type (polyfillable) or real runtime support (not). See `csharp-polyfills` for the full three-tier breakdown, how polyfills work, and hand-written-vs-PolySharp guidance — this file only covers the polyfill caveat briefly below.
 
 ## Finding the effective LangVersion
 
@@ -32,7 +34,7 @@ dotnet build -getProperty:LangVersion
 dotnet build -getProperty:TargetFramework
 ```
 
-**Never raise `LangVersion` or retarget a project's `TargetFramework` just to use a feature.** If a feature needs C# 15 and the project targets `net10.0`, that is a signal to use the `net10.0`-compatible approach (or raise it as a separate, deliberate decision involving whoever owns the project's TFM/runtime support matrix) — not to silently bump `LangVersion` inside an unrelated change.
+**Change `LangVersion` or `TargetFramework` deliberately, never as a side effect.** Raising `LangVersion` above the TFM default (commonly `latest` on `netstandard2.0`/`net4x` with polyfills) is a valid repo-wide choice; see `csharp-polyfills` for which features then work. Retargeting changes the supported runtime matrix and is a bigger decision. Either way, make it its own change in `Directory.Build.props`, not a bump buried inside an unrelated edit. Within an existing change, use what the project's current LangVersion and TFM support.
 
 ## Feature-by-version reference (C# 12–15)
 
@@ -79,7 +81,8 @@ Needs `net11.0`+/C# 15. An analyzer (IDE0410) flags the older flag-variable/`got
 
 ## Polyfill caveats when multi-targeting
 
-Targeting `netstandard2.0` or another older TFM alongside a modern one splits features into two buckets:
+See `csharp-polyfills` for the full mechanism (how a polyfill type is looked up, hand-written shim
+patterns, PolySharp). Short version: targeting `netstandard2.0` or another older TFM alongside a modern one splits features into two buckets:
 
 - **Compiler-only features** (no runtime type required) work purely from `LangVersion` regardless of TFM — e.g. pattern matching syntax, `switch` expressions, most of collection expressions when the target is a concrete type the old TFM already has (`T[]`, `List<T>`).
 - **Features needing a runtime-provided type or attribute** fail on older TFMs unless you supply a polyfill:
@@ -99,7 +102,7 @@ Anything requiring `<LangVersion>preview</LangVersion>` (currently: the C# 15 me
 ## Checklist
 
 - [ ] Checked the project's actual `TargetFramework`/`LangVersion` (including `Directory.Build.props`) before using a C# 12–15 feature, not assumed from the installed SDK
-- [ ] Never bumped `LangVersion`/retargeted a TFM solely to unlock a feature for one change
+- [ ] Any `LangVersion`/TFM change made deliberately as its own repo-level change, with polyfills for the features it relies on
 - [ ] Multi-targeted projects verified against their lowest TFM, with polyfills identified for any runtime-type-dependent feature
 - [ ] No `LangVersion=preview` construct present outside a throwaway file-based spike
 - [ ] Labeled `break`/`continue` used instead of a flag variable or `goto` once the project is on `net11.0`+/C# 15

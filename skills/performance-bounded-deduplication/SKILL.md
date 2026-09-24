@@ -6,9 +6,8 @@ description: Use when removing production-code duplication from a C#/.NET codeba
 # Performance-bounded deduplication
 
 Deduplication that makes the product slower is not a win. The loop below removes duplication **only as far as
-the measurements allow**, and records proof for everything that stays. It is the working method behind a
-campaign that took an analyzer repo from 92 clone sets to a handful of evidenced residuals with every commit
-measured against the limits.
+the measurements allow**, and records proof for everything that stays. Every commit is measured against the
+limits.
 
 Related skills: `roslyn-duplicate-detection` (the percentage view and the original whole-body detector),
 `roslyn-rewriters`, `roslyn-analyzer-performance`, `benchmarking`, `csharp-tunit`, `csharp-verification`.
@@ -126,9 +125,10 @@ window: baseline then candidate (r1), candidate then baseline (r2). Paths: analy
 - a **breach counts only if it reproduces in both orders**.
 
 **c. Confirm flags** - a both-order flag at 30 iterations or 400 ms windows is a candidate, not a result. Re-run
-just those subjects (plus two unchanged controls) at 1,000 iterations / 2 s windows. In practice most flags vanish
-(between-process variance was ~±20% on short windows); real ones repeat with the same sign and size - e.g. a
-registration path allocating +33% because a shared overload fetched a syntax root the provider never read.
+just those subjects (plus two unchanged controls) at 1,000 iterations / 2 s windows. Short-window flags are often
+just between-process variance and vanish on the longer run; a real regression repeats with the same sign and
+similar size - e.g. a registration path allocating extra bytes because a shared overload fetched a syntax root
+the provider never read.
 
 **d. BenchmarkDotNet for one subject** - `examples/benchmarkdotnet/SnapshotAbBenchmarks.cs` when a single site
 needs a precise answer or an allocation breakdown: `[MemoryDiagnoser]`, `[EventPipeProfiler(GcVerbose)]`,
@@ -136,9 +136,9 @@ in-process toolchain, the snapshot directory as a `[Params]`. Pin with `taskset 
 
 Machine discipline: pin benchmarks to physical cores, run tools on the spare core, **never build or compile
 anything while a benchmark runs - not even a file-based app pinned to the spare core, because an already-running
-compiler server or build node is not pinned and lands on the benchmark cores** (a sweep taken while samples compiled
-showed dozens of both-order time flags on unchanged subjects, all in the same direction), (queue the build behind the sweep with a background wait), gate each run on a quiet machine,
-and pass explicit subject filter files - a stale default filter silently measures the wrong subjects.
+compiler server or build node is not pinned and lands on the benchmark cores** (queue the build behind the sweep
+with a background wait); gate each run on a quiet machine, and pass explicit subject filter files - a stale
+default filter silently measures the wrong subjects.
 
 ### 6. Report
 

@@ -202,8 +202,8 @@ public sealed class OrderRejectedException(string reason, Guid orderId)
   catch scenario — an existing framework exception (`InvalidOperationException`,
   `ArgumentException`, `NotSupportedException`) is usually the right, boring choice.
 - Custom exceptions do **not** need a full set of serialization constructors on modern .NET —
-  the old MDA-era `SerializationInfo` constructor pattern is only relevant if you still use binary
-  serialization (rare, and being phased out platform-wide); skip it for ordinary libraries.
+  the `SerializationInfo` constructor pattern is only relevant if you use binary serialization
+  (rare); skip it for ordinary libraries.
 
 ## `OperationCanceledException`
 

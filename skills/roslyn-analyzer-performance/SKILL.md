@@ -198,12 +198,12 @@ context.RegisterCompilationStartAction(static start =>
 });
 ```
 
-A syntax audit that flags "lambda captures a local" reports every one of these. Measured over 637
-analyzers, **no** startup row had a real `<>c__DisplayClass` as its heaviest allocating frame — the
-category was 73% of the entire audit backlog and worth zero bytes. Frames that *look* like closures
-in a trace are usually `+<>c.` — the compiler's cached singleton for a lambda that captures nothing,
-which allocates nothing. What is attributed there is the **body** of the compilation-start action,
-which is `eager-metadata`, a different shape with a different fix.
+A syntax audit that flags "lambda captures a local" reports every one of these, but a real
+startup-time `<>c__DisplayClass` almost never shows up as the heaviest allocating frame — this
+category can dominate the audit backlog by count while costing zero measured bytes. Frames that
+*look* like closures in a trace are usually `+<>c.` — the compiler's cached singleton for a lambda
+that captures nothing, which allocates nothing. What is attributed there is the **body** of the
+compilation-start action, which is `eager-metadata`, a different shape with a different fix.
 
 Only flag a closure allocated **inside a per-callback body**, which repeats per node.
 
@@ -212,10 +212,10 @@ Only flag a closure allocated **inside a per-callback body**, which repeats per 
 A syntax audit finds *candidates*; only the trace says which cost anything. Before turning a shape
 into work orders, check what it is worth in bytes. Two failure modes, and both have bitten:
 
-- **A shape that costs nothing** — closure-capture above. 288 findings, 0 measured bytes. Dispatching
-  agents at it burns a campaign and churns correct code.
+- **A shape that costs nothing** — closure-capture above, which can produce a large finding count
+  with zero measured bytes. Dispatching agents at it burns a campaign and churns correct code.
 - **A shape dismissed as idiom that is actually the biggest defect** — eager metadata at compilation
-  start. Reading it, it looks textbook; the `startup` path proved it was 276 analyzers and 71 MB.
+  start looks textbook on read but the `startup` path can show it as the largest cost in the set.
 
 The rule is symmetric: **neither** accept nor reject a shape by inspection. Join the audit to the
 sweep and let the bytes decide which findings become work.

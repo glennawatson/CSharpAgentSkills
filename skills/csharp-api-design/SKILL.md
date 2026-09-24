@@ -94,23 +94,27 @@ both wrong for something that happens routinely.
   arguments are implicitly convertible to an existing overload's parameter types in a way that
   makes common call sites ambiguous or silently picks the wrong one.
 
-## Accept general, return specific
+## Concrete collection types in signatures
 
-Accept the most general useful type so more callers can call you without adapting; return the
-most specific useful type so callers get maximum capability without a cast.
+Use concrete collection types in parameters and return types: `List<T>`, `Dictionary<TKey, TValue>`,
+`HashSet<T>`, `T[]`, `ImmutableArray<T>`. Never use the mutable collection interfaces (`IList<T>`,
+`ICollection<T>`, `IDictionary<TKey, TValue>`, `ISet<T>`). They cost interface dispatch, hide what
+the caller actually gets, and promise operations that often throw. The CA1859 analyzer rule
+("use concrete types when possible for improved performance") pushes the same way. See
+`csharp-collections-modern`.
 
 ```csharp
-// ✅ accepts anything enumerable; returns a concrete, capability-rich type
-public ImmutableArray<T> Snapshot<T>(IEnumerable<T> source) => source.ToImmutableArray();
+// ✅ concrete in, concrete out
+public ImmutableArray<T> Snapshot<T>(List<T> source) => [.. source];
 
-// ❌ over-constrains the input, under-delivers on the output
-public IEnumerable<T> Snapshot<T>(List<T> source) => source.ToList();
+// ❌ interfaces hide the real types and cost dispatch
+public IList<T> Snapshot<T>(ICollection<T> source) => source.ToList();
 ```
 
-Same logic for parameters: prefer `IReadOnlyList<T>`/`ReadOnlySpan<T>` over `List<T>`/`T[]` when
-you only read; prefer `IEnumerable<T>` only when you truly need just one pass and don't need
-`Count` or indexing (repeated enumeration of a lazy `IEnumerable<T>` is a classic footgun for
-callers).
+Exceptions: take `ReadOnlySpan<T>` for read-only contiguous input on hot paths; take or return
+`IEnumerable<T>` only for genuinely lazy or streaming sequences (and never enumerate one twice);
+return `IReadOnlyList<T>`/`IReadOnlyDictionary<TKey, TValue>` only to expose a deliberate read-only
+view of internal state without copying.
 
 ## Optional-parameter binary-break traps
 
@@ -210,7 +214,7 @@ public Task ConnectAsync(string host, int port) => ConnectAsync(new ConnectOptio
 - [ ] New class is `sealed` unless inheritance is a designed scenario
 - [ ] Failure mode matches expected-vs-exceptional (`Try*` / exception / result type)
 - [ ] `CancellationToken` last, defaulted only on outermost public entry points
-- [ ] Parameters accept the most general useful type; returns give the most specific useful type
+- [ ] Signatures use concrete collection types; no `IList<T>`/`ICollection<T>`/`IDictionary<TKey, TValue>`/`ISet<T>`
 - [ ] No optional-parameter binary-break trap on a shipped binary surface — overloads used instead
 - [ ] Interface changes considered for both source and binary breaks; DIM diamond conflicts checked
 - [ ] Public API tracked (`PublicAPI.Shipped/Unshipped.txt` or an approval test) and updated

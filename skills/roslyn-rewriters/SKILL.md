@@ -84,7 +84,7 @@ Needs `Microsoft.Build.Locator` + `Microsoft.CodeAnalysis.Workspaces.MSBuild` (+
 
 ## Use the latest stable Roslyn
 
-**Default to the newest non-preview `Microsoft.CodeAnalysis.*` (the `5.0.0` line as of writing) for these throwaway tools.** There's no downside: the harness is disposable, doesn't ship, and never has to match the target repo's compiler version — it just reads/parses `.cs` text. Newer Roslyn also pulls a patched MSBuild, so the workspace example restores with **no vulnerability advisories**, whereas the older `4.x` line drags in a flagged `Microsoft.Build` transitively. Pin all the `Microsoft.CodeAnalysis.*` packages to the **same** version. Don't reach for preview builds unless you specifically need an unreleased language feature.
+**Default to the newest non-preview `Microsoft.CodeAnalysis.*` (the `5.0.0` line) for these throwaway tools.** There's no downside: the harness is disposable, doesn't ship, and never has to match the target repo's compiler version — it just reads/parses `.cs` text. Newer Roslyn also pulls a patched MSBuild, so the workspace example restores with **no vulnerability advisories**, whereas the older `4.x` line drags in a flagged `Microsoft.Build` transitively. Pin all the `Microsoft.CodeAnalysis.*` packages to the **same** version. Don't reach for preview builds unless you specifically need an unreleased language feature.
 
 ## Doing the edit right
 

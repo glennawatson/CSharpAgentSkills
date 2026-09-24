@@ -84,7 +84,7 @@ string created = string.Create(2, 42, static (span, state) =>
 });
 ```
 
-Use it when you know the exact output length up front and would otherwise concatenate several pieces. **Always pass a `static` lambda plus a state argument, never a capturing closure.** Measured (BenchmarkDotNet, net10.0/net11.0, building a short `"prefix-12345"`-shaped string): a `static` lambda over a tuple state allocates only the 48-byte result string at ~13 ns; the same body written as a capturing lambda allocates an extra ~24–32 bytes for the closure and costs roughly 2–3x as long. This holds on both .NET 10 and .NET 11 — see the escape-analysis note below for why the closure still allocates even with .NET 10's stack-allocation improvements.
+Use it when you know the exact output length up front and would otherwise concatenate several pieces. **Always pass a `static` lambda plus a state argument, never a capturing closure.** A `static` lambda over a tuple state allocates only the result string; the same body written as a capturing lambda allocates extra bytes for the closure and costs roughly 2–3x as long. This holds on both .NET 10 and .NET 11 — see the escape-analysis note below for why the closure still allocates even with .NET 10's stack-allocation improvements.
 
 ### .NET 9+: the state can be a `ref struct` (spans included)
 
@@ -100,7 +100,7 @@ string s = string.Create(prefix.Length + 5, (Prefix: prefix, Id: 42), static (sp
 });
 ```
 
-Verified by compiling the same call against `net8.0` (fails: `CS9244 — TState may not be a ref struct ... to use it as parameter 'TState'`) and `net9.0`/`net10.0`/`net11.0` (compiles and runs) with the current SDKs. Reach for this when the piece you'd otherwise capture is itself a span/slice — it lets `string.Create` consume it as state instead of forcing a `.ToString()` (extra allocation) or a capturing lambda (closure allocation) to get it into scope.
+This fails to compile on `net8.0` (`CS9244 — TState may not be a ref struct ... to use it as parameter 'TState'`) and compiles and runs on `net9.0`/`net10.0`/`net11.0`. Reach for this when the piece you'd otherwise capture is itself a span/slice — it lets `string.Create` consume it as state instead of forcing a `.ToString()` (extra allocation) or a capturing lambda (closure allocation) to get it into scope.
 
 ### The interpolation overload: `string.Create(IFormatProvider?, Span<char> initialBuffer, ref DefaultInterpolatedStringHandler)`
 
@@ -111,11 +111,11 @@ Span<char> buffer = stackalloc char[64];
 string s = string.Create(CultureInfo.InvariantCulture, buffer, $"{name}: {amount:C}");
 ```
 
-The interpolation holes are formatted straight into `buffer` (stackalloc, so no extra heap traffic for the intermediate), then copied once into the final `string`. Use it when you need explicit `IFormatProvider` control (avoiding the ambient-culture pitfalls in `StringComparison`/culture-sensitive formatting) *and* want to avoid the handler falling back to a pooled/heap array for a larger interpolation. This overload has been available since .NET 8 — it isn't new, but it's easy to miss next to the more famous span-fill overload above.
+The interpolation holes are formatted straight into `buffer` (stackalloc, so no extra heap traffic for the intermediate), then copied once into the final `string`. Use it when you need explicit `IFormatProvider` control (avoiding the ambient-culture pitfalls in `StringComparison`/culture-sensitive formatting) *and* want to avoid the handler falling back to a pooled/heap array for a larger interpolation. This overload has been available since .NET 8 — easy to miss next to the more famous span-fill overload above.
 
 ### When `string.Create` is pointless
 
-- **A single `$"..."` interpolation already lowers to `DefaultInterpolatedStringHandler`** and allocates only the result string — wrapping it in `string.Create` (or a one-shot `StringBuilder`) buys nothing. Measured: plain interpolation and the `string.Create` span-fill form allocate the same 48 bytes for an equivalent short string.
+- **A single `$"..."` interpolation already lowers to `DefaultInterpolatedStringHandler`** and allocates only the result string — wrapping it in `string.Create` (or a one-shot `StringBuilder`) buys nothing. Plain interpolation and the `string.Create` span-fill form allocate the same amount for an equivalent short string.
 - **`string.Concat(ReadOnlySpan<char>, ...)`** (the `ReadOnlySpan<char>` overloads, not the older `string[]` ones) is just as allocation-free for straight concatenation of already-available spans — reach for it over `string.Create` when there's no custom formatting logic, just pieces to lay end to end.
 - **`string.Join`** with the .NET 9+ `params ReadOnlySpan<T>` overloads (see below) is likewise already optimal for joining a handful of values — don't hand-roll a `string.Create` call to replace it.
 - Don't reach for `string.Create` just because a hot path "does string work" — profile first; for anything under a few concatenated pieces, the ordinary tools above already make one allocation.
@@ -132,7 +132,7 @@ recompiling existing call sites against .NET 9+ removes the implicit `string[]` 
 
 ### .NET 10 JIT escape analysis — why the closure still costs you
 
-.NET 10 added escape analysis for delegates: when a lambda's `Func`/`Action` object provably doesn't escape its calling method, the JIT stack-allocates *that* object instead of heap-allocating it. This does **not** eliminate the closure. For a capturing lambda, the compiler still emits a display class to hold the captured locals, and .NET 10's escape analysis does not (yet) extend to that display class — only the delegate object wrapping it. Measured directly (`static` no-capture lambda vs. a lambda capturing one local, both passed straight into a method and never stored, on net10.0): the static lambda allocates nothing; the capturing lambda still allocates 24 bytes for its closure every call, even though the surrounding `Func<>` itself is now stack-allocated. **Conclusion: a `static` lambda + explicit `TState` is still the only way to make `string.Create` (or any callback) fully allocation-free — .NET 10's escape analysis narrows the gap but doesn't close it for captured state.**
+.NET 10 added escape analysis for delegates: when a lambda's `Func`/`Action` object provably doesn't escape its calling method, the JIT stack-allocates *that* object instead of heap-allocating it. This does **not** eliminate the closure. For a capturing lambda, the compiler still emits a display class to hold the captured locals, and .NET 10's escape analysis does not (yet) extend to that display class — only the delegate object wrapping it. A `static` no-capture lambda allocates nothing; a lambda capturing one local still allocates for its closure on every call, even though the surrounding `Func<>` itself is now stack-allocated. A `static` lambda + explicit `TState` is still the only way to make `string.Create` (or any callback) fully allocation-free — .NET 10's escape analysis narrows the gap but doesn't close it for captured state.
 
 ## `CompositeFormat` for repeated format strings
 
@@ -197,7 +197,7 @@ Only materialize a `string` (`.ToString()` on the slice) at the point you actual
 
 ## .NET 11: wrap in-memory data as a `Stream` without copying
 
-`new MemoryStream(Encoding.UTF8.GetBytes(s))` allocates twice: once for the encoded byte array, once for the `MemoryStream`'s internal buffer copy. .NET 11 adds `Stream` types (`System.IO`, confirmed by compiling against SDK `11.0.100-rc.1`) that wrap existing memory directly:
+`new MemoryStream(Encoding.UTF8.GetBytes(s))` allocates twice: once for the encoded byte array, once for the `MemoryStream`'s internal buffer copy. .NET 11 adds `Stream` types (`System.IO`) that wrap existing memory directly:
 
 ```csharp
 // ❌ encodes into a new byte[], MemoryStream copies it again internally

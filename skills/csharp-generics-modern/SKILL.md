@@ -130,7 +130,7 @@ static class DefaultOf<T>
 
 ## .NET 11: generic math additions
 
-A few `System.Numerics`/`System.Random` APIs went generic in .NET 11 (verified by compiling against SDK `11.0.100-rc.1`) — reach for them instead of hand-rolling the same thing per numeric type:
+A few `System.Numerics`/`System.Random` APIs went generic in .NET 11 — reach for them instead of hand-rolling the same thing per numeric type:
 
 ```csharp
 // Random.NextInteger<T>/NextBinaryFloat<T> — generic over any INumber<T>-shaped type,

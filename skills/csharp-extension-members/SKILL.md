@@ -88,7 +88,7 @@ Both blocks live in the same static class; the generic parameter `<T>` is declar
 
 ## Extension operators
 
-Verified working in C# 14: an `extension` block can declare operators, which participate in overload resolution for the receiver type exactly as if declared on the type itself:
+An `extension` block can declare operators, which participate in overload resolution for the receiver type exactly as if declared on the type itself:
 
 ```csharp
 public static class OpExtensions

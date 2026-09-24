@@ -12,10 +12,7 @@ feature — `csharp-async` has a short pointer to this skill and keeps its own m
 skill covers the mechanism, the enablement story, and the Mono/WebAssembly risk in depth. Don't edit
 `csharp-async` — cross-reference it.
 
-**Verified against**: `dotnet/runtime` design docs (`docs/design/specs/runtime-async.md`,
-`docs/design/coreclr/botr/runtime-async-codegen.md`), the Roslyn `Runtime Async Design.md`, the .NET 11
-RC1 runtime release notes, and an empirical build/reflect/benchmark pass against the installed
-`11.0.100-rc.1` SDK. Runtime Async is still a preview-tagged feature at RC1 — mechanics below could still
+This covers the `11.0.100-rc.1` SDK. Runtime Async is still a preview-tagged feature at RC1 — mechanics below could still
 shift before the final .NET 11 release. Re-verify on your SDK before relying on exact numbers.
 
 ## How it works
@@ -23,7 +20,7 @@ shift before the final .NET 11 release. Re-verify on your SDK before relying on 
 - The compiler emits an async method as a method tagged `[MethodImpl(MethodImplOptions.Async)]` (IL flag
   `0x2000`, the `async` keyword in raw IL) instead of a normal method whose body constructs and drives a
   state-machine struct. There is **no nested `<Method>d__N` state-machine type, no `AsyncStateMachineAttribute`,
-  no async method builder** in the emitted IL — confirmed by decompiling a runtime-async build: the class has
+  no async method builder** in the emitted IL — decompiling a runtime-async build shows the class has
   zero nested types where the classic build has one.
 - Inside the method body, `await expr` lowers to a call to a runtime helper —
   `System.Runtime.CompilerServices.AsyncHelpers.Await(expr)` (or `AwaitAwaiter`/`UnsafeAwaitAwaiter` for
@@ -42,8 +39,8 @@ shift before the final .NET 11 release. Re-verify on your SDK before relying on 
   the current transformation.
 - **Stack traces**: with runtime-async, the actual method frames appear on a *live* execution stack (a
   debugger's call-stack window, a `new StackTrace()` inside the method, a profiler's live sample) instead of
-  interleaved `MoveNext`/`AsyncMethodBuilderCore.Start` infrastructure frames. Verified from the .NET 11 RC1
-  release notes' own before/after example: a 3-level async chain went from 13 frames to 5. **This is a live-
+  interleaved `MoveNext`/`AsyncMethodBuilderCore.Start` infrastructure frames — a 3-level async chain goes from
+  13 frames to 5. **This is a live-
   stack change only** — caught-exception stack traces (`catch (Exception ex) { ex.StackTrace }`) already look
   clean with the classic model because of existing `ExceptionDispatchInfo` handling, so don't expect a visible
   diff there.
@@ -56,9 +53,9 @@ shift before the final .NET 11 release. Re-verify on your SDK before relying on 
   into shared code to shrink generated size, caches/reuses `Continuation` objects for pooled call shapes, and
   recognizes `Task.FromResult`/`Task.CompletedTask`/`ValueTask.FromResult` as intrinsics on the async path.
   Implicit tail calls from an async method that directly returns another async call are re-enabled under
-  runtime-async. All from the RC1 release notes' "Runtime Async performance improvements" section.
-- NativeAOT and ReadyToRun (crossgen2) both compile runtime-async methods, including inlining them — this was
-  a restriction lifted during the .NET 11 preview cycle and is now validated end-to-end per the release notes.
+  runtime-async.
+- NativeAOT and ReadyToRun (crossgen2) both compile runtime-async methods, including inlining them — a
+  restriction lifted during the .NET 11 preview cycle.
 
 ### Telling whether a method was compiled runtime-async
 
@@ -73,17 +70,17 @@ bool hasStateMachine = m.GetCustomAttributes(false)
 // hasStateMachine == !isRuntimeAsync in practice — a method has one or the other, never both
 ```
 
-Empirically (11.0.100-rc.1 SDK, decompiled with ilspycmd / inspected via reflection): a runtime-async method
+On the 11.0.100-rc.1 SDK: a runtime-async method
 has `MethodImplAttributes.Async` set and **no** `AsyncStateMachineAttribute` and **no** nested state-machine
 type; a classic async method has the attribute, the nested `d__N` type, and `MethodImplAttributes.IL` (not
 `Async`).
 
 ## How it's enabled
 
-**Empirically verified — this is not "on by default" for user code on the RC1 SDK.** A plain
-`<TargetFramework>net11.0</TargetFramework>` class library, built with the installed `11.0.100-rc.1` SDK,
-produced a classic compiler state machine (`AsyncStateMachineAttribute`, nested `d__0` type) with **no**
-project settings at all. Runtime Async only appeared after adding:
+**This is not on by default for user code on the RC1 SDK.** A plain
+`<TargetFramework>net11.0</TargetFramework>` class library built with the `11.0.100-rc.1` SDK
+produces a classic compiler state machine (`AsyncStateMachineAttribute`, nested `d__0` type) with **no**
+project settings at all. Runtime Async only appears after adding:
 
 ```xml
 <PropertyGroup>
@@ -91,22 +88,20 @@ project settings at all. Runtime Async only appeared after adding:
 </PropertyGroup>
 ```
 
-after which the method compiled with `MethodImplAttributes.Async` and no state-machine type. Setting
-`<UseRuntimeAsync>true</UseRuntimeAsync>` alone (without `Features`) did **not** enable it in this test, and
-`<UseRuntimeAsync>false</UseRuntimeAsync>` did **not** disable it when `Features=runtime-async=on` was also
+after which the method compiles with `MethodImplAttributes.Async` and no state-machine type. Setting
+`<UseRuntimeAsync>true</UseRuntimeAsync>` alone (without `Features`) does **not** enable it, and
+`<UseRuntimeAsync>false</UseRuntimeAsync>` does **not** disable it when `Features=runtime-async=on` is also
 set — so treat `UseRuntimeAsync` as unproven/unwired at the public SDK level on this build and use the
 `Features` switch as the one you can rely on. `<EnablePreviewFeatures>true</EnablePreviewFeatures>` is **not**
 required — that gate was removed from the compiler in an earlier .NET 11 preview.
 
 - **The BCL is different.** `dotnet/runtime`'s own libraries have been built with `runtime-async=on` since
-  .NET 11 Preview 4 — release notes call this out explicitly ("Runtime libraries are now compiled with
-  runtime-async"), specifically to get broad functional/perf validation. So BCL methods you call may already
-  be runtime-async internally regardless of what your own project does — this is transparent to your code
-  either way (see interop, below).
+  .NET 11 Preview 4 ("Runtime libraries are now compiled with runtime-async"), to get broad functional/perf
+  validation. So BCL methods you call may already be runtime-async internally regardless of what your own
+  project does — this is transparent to your code either way (see interop, below).
 - **Per-TFM control works cleanly.** In a multi-targeted project you can condition the `Features` property on
-  `$(TargetFramework)`, e.g. only turn it on for `net11.0` and leave `net10.0`/`netstandard2.0` builds alone —
-  verified by building a `net10.0;net11.0` multi-target with the property conditioned on
-  `'$(TargetFramework)'=='net11.0'`; each TFM's output had the expected codegen for that TFM.
+  `$(TargetFramework)`, e.g. only turn it on for `net11.0` and leave `net10.0`/`netstandard2.0` builds alone;
+  each TFM gets the codegen for that TFM.
 - **Interop between runtime-async and classic async is transparent at the call boundary.** Both shapes still
   return `Task`/`Task<T>`/`ValueTask`/`ValueTask<T>` with the same public signature; a caller compiled with
   the classic model awaits a runtime-async callee exactly like any other `Task`-returning method (and vice
@@ -114,8 +109,7 @@ required — that gate was removed from the compiler in an earlier .NET 11 previ
   runtime async or not" — direct quote from the Roslyn design doc. You cannot see or control the callee's
   choice from the caller's IL.
 - Given this is a still-shifting preview switch, **re-check the exact property name/value on your SDK before
-  shipping** — don't assume `Features=runtime-async=on` is the final RTM spelling; it's what's documented and
-  what this skill verified on RC1.
+  shipping** — don't assume `Features=runtime-async=on` is the final RTM spelling.
 
 ## What it means for existing advice (see `csharp-async`)
 
@@ -127,12 +121,9 @@ required — that gate was removed from the compiler in an earlier .NET 11 previ
   code** — all still valid. Runtime Async lowers the constant factor of an `await`; it does not remove the
   cost of allocating a `Task` per call or wrapping already-synchronous work in an unnecessary state machine
   (of either kind).
-- **Don't stop measuring.** A quick empirical check ([MemoryDiagnoser], BenchmarkDotNet 0.14.0, net11.0
-  RC1, `[Features]runtime-async=on` vs off, 100 `await Task.Yield()`-backed calls per iteration) showed
-  runtime-async at ~17.4 µs / 5.7 KB allocated vs. classic at ~24.3 µs / 9.6 KB allocated on the same SDK —
-  roughly 30% faster and ~40% less allocation for this specific await-heavy microbenchmark. Treat this as "a
-  real, measurable effect exists," not as a number to quote for your workload — benchmark your own hot path,
-  see `benchmarking`.
+- **Don't stop measuring.** Runtime Async measurably lowers both latency and allocation for an await-heavy
+  path (fewer allocations per suspension, lower per-await overhead), but the magnitude is workload-dependent —
+  benchmark your own hot path, see `benchmarking`.
 - **Debugging**: the RC1 release notes state breakpoints now bind correctly inside runtime-async methods and
   the debugger can step through `await` boundaries without landing in generated infrastructure. Live call
   stacks are shorter and read as real call chains (see above). If a tool you use parses stack traces by

@@ -14,8 +14,8 @@ description: Use when creating, converting, editing, or troubleshooting a .NET s
 - **No configuration/platform matrix noise.** `.sln` spells out every `{GUID}.Debug|Any CPU.ActiveCfg = ...` line per project per config. `.slnx` infers Debug/Release and the platform list from the referenced projects; you only add `<Configurations>`/per-project overrides when a project genuinely needs to diverge.
 - **Folders are just nesting**, not synthetic solution-folder GUID entries.
 
-Confirmed current tooling support:
-- **.NET SDK CLI**: `slnx` support landed in .NET SDK 9.0.200 ([Introducing SLNX support in the .NET CLI](https://devblogs.microsoft.com/dotnet/introducing-slnx-support-dotnet-cli/)). Starting in **.NET 10**, `dotnet new sln` generates `.slnx` by default (confirmed here: SDK 10.0.401 and 11.0.100-rc.1 both default `dotnet new sln` to `--format slnx`; pass `--format sln` to opt back into the legacy format if a specific tool genuinely can't read `.slnx` yet).
+Current tooling support:
+- **.NET SDK CLI**: `slnx` support landed in .NET SDK 9.0.200 ([Introducing SLNX support in the .NET CLI](https://devblogs.microsoft.com/dotnet/introducing-slnx-support-dotnet-cli/)). Starting in **.NET 10**, `dotnet new sln` generates `.slnx` by default; pass `--format sln` to opt back into the legacy format if a specific tool genuinely can't read `.slnx` yet.
 - **MSBuild**: solution builds against `.slnx` are supported from MSBuild 17.12; `before.<name>.slnx.targets`/`after.<name>.slnx.targets` customization files need MSBuild 17.14+.
 - **Visual Studio**: opens/builds `.slnx` natively; VS 2026 adds a **Default Solution File Format** option (Tools > Options > Projects and Solutions > General) to make `.slnx` the default for new solutions.
 - **Rider**: `.slnx` support shipped in the 2024.2.6/2024.3 line (JetBrains blog, [Support for SLNX Solution Files](https://blog.jetbrains.com/dotnet/2024/10/04/support-for-slnx-solution-files/)) — recent Rider versions are fine; anything older is not.
@@ -28,7 +28,7 @@ dotnet new sln -n MyRepo          # .slnx by default on .NET 10 and .NET 11 SDKs
 dotnet new sln -n MyRepo --format slnx   # explicit, same result
 ```
 
-Verified on this machine: `dotnet new sln --help` shows `-f|--format <sln|slnx>` with **`Default: slnx`** on both the installed .NET 10 SDK (10.0.401) and the .NET 11 RC SDK (11.0.100-rc.1.26425.128). A brand-new solution is just:
+`dotnet new sln --help` shows `-f|--format <sln|slnx>` with **`Default: slnx`** on .NET 10 and .NET 11 SDKs. A brand-new solution is just:
 
 ```xml
 <Solution>
@@ -43,7 +43,7 @@ Never pass `--format sln` for a new solution unless a named, specific tool in th
 dotnet sln MyRepo.sln migrate
 ```
 
-Verified: this generates `MyRepo.slnx` next to the `.sln` (confirmed by running it against a freshly created `.sln` — it printed `.slnx file .../Legacy.slnx generated.` and produced valid XML, including an inferred `<Configurations>` block with the platforms the old file declared).
+This generates `MyRepo.slnx` next to the `.sln`, printing `.slnx file .../MyRepo.slnx generated.` and producing valid XML, including an inferred `<Configurations>` block with the platforms the old file declared.
 
 Do the whole migration as one change, not just the `migrate` step:
 
@@ -83,23 +83,23 @@ dotnet sln MyRepo.slnx remove src/OldProject/OldProject.csproj
 dotnet sln MyRepo.slnx list
 ```
 
-Verified by round-tripping `add`/`remove`/`list` on a scratch solution: the CLI writes project paths **relative to the `.slnx` file, with forward slashes**, even when the CLI is invoked from a subdirectory or given an absolute path on input (e.g. `src/Demo.Lib/Demo.Lib.csproj`). Folders (`<Folder Name="/src/">`) are created and removed automatically as projects are added/removed.
+The CLI writes project paths **relative to the `.slnx` file, with forward slashes**, even when invoked from a subdirectory or given an absolute path on input (e.g. `src/Demo.Lib/Demo.Lib.csproj`). Folders (`<Folder Name="/src/">`) are created and removed automatically as projects are added/removed.
 
 Because `.slnx` is plain, well-formed XML, a hand edit (adding a `<Project Path="..."/>` line) is low-risk and fine for quick fixes — just keep the same relative-forward-slash convention the CLI uses, and prefer the CLI when you can, since it also validates names (invalid Windows filenames, duplicate names, length limits) for you.
 
 ## Solution filters (`.slnf`)
 
-`.slnf` is not a legacy format and is not replaced by `.slnx`. It serves a different purpose: a named subset of a solution's projects, so you can open, build or test part of a large repo (for example `Core.slnf` or `Windows.slnf`). Use it alongside the `.slnx`, which stays the single source of truth for the full project list. Point every filter at the `.slnx`. Verified on the installed .NET 11 RC SDK (11.0.100-rc.1):
+`.slnf` is not a legacy format and is not replaced by `.slnx`. It serves a different purpose: a named subset of a solution's projects, so you can open, build or test part of a large repo (for example `Core.slnf` or `Windows.slnf`). Use it alongside the `.slnx`, which stays the single source of truth for the full project list. Point every filter at the `.slnx`.
 
 - `dotnet new slnf -n MyFilter -s MyRepo.slnx` creates the filter file, pointing at the given parent solution (`-s|--parent-solution`, defaulting to `<name>.slnx`). The `slnf` template is new in .NET 11 — it doesn't exist on the .NET 10 SDK.
-- `dotnet sln <file>.slnf list|add|remove` all work directly against a `.slnf`, editing its `projects` array. `dotnet sln <file>.slnf` support for `.slnf` was introduced incrementally: `list` in .NET SDK 9.0.3xx, `add`/`remove` in .NET 11.
-- Quirk observed: `dotnet sln <file>.slnf add <path>` writes the added project path with **backslashes** (`src\\Demo.Lib\\Demo.Lib.csproj`) even when run on Linux — `.slnf` is JSON that historically follows Windows path conventions; don't "fix" this to forward slashes by hand, and don't be surprised by it in a diff.
+- `dotnet sln <file>.slnf list|add|remove` all work directly against a `.slnf`, editing its `projects` array. Support for `.slnf` was introduced incrementally: `list` in .NET SDK 9.0.3xx, `add`/`remove` in .NET 11.
+- `dotnet sln <file>.slnf add <path>` writes the added project path with **backslashes** (`src\\Demo.Lib\\Demo.Lib.csproj`) even when run on Linux — `.slnf` is JSON that historically follows Windows path conventions; don't "fix" this to forward slashes by hand, and don't be surprised by it in a diff.
 - `dotnet build MyFilter.slnf` / `dotnet test MyFilter.slnf` work like they do against a solution file directly.
-- When a folder holds both a `.slnx` and `.slnf`, commands that pick a file implicitly use the `.slnx` (verified with `dotnet build` on SDK 11). Always name the filter explicitly (`dotnet build Core.slnf`) when you mean the subset.
+- When a folder holds both a `.slnx` and `.slnf`, commands that pick a file implicitly use the `.slnx`. Always name the filter explicitly (`dotnet build Core.slnf`) when you mean the subset.
 
 ## Gotchas
 
-- **Both `.sln` and `.slnx` in the same folder → build fails.** Verified: `dotnet build` with no argument in a folder containing both reports `MSB1011: Specify which project or solution file to use because this folder contains more than one project or solution file.` This is the concrete failure mode of "keeping both during a slow migration" — don't; delete the `.sln` in the same change as the `migrate`.
+- **Both `.sln` and `.slnx` in the same folder → build fails.** `dotnet build` with no argument in a folder containing both reports `MSB1011: Specify which project or solution file to use because this folder contains more than one project or solution file.` This is the concrete failure mode of keeping both during a slow migration — don't; delete the `.sln` in the same change as the `migrate`.
 - **Tooling that only reads `.sln`.** Some third-party build/CI tasks, older MSBuild/Visual Studio installs, and older VS Code C# Dev Kit builds may not understand `.slnx` yet. Check by grepping CI workflows and build scripts for `.sln` usage and by checking the tool's own changelog/version requirements (MSBuild 17.12+, SDK 9.0.200+ CLI, current Rider/VS Code Dev Kit). The fix is to **upgrade the tool**, not to keep a `.sln` around for it — a stray `.sln` immediately reintroduces the drift risk above.
 - **`dotnet sln`/`dotnet build`/`dotnet test` with no explicit file** search the current directory and use the one solution/filter file they find; if none or more than one exist, they error rather than guess. Always pass the file explicitly in CI scripts even when there's only one, so the script doesn't silently start failing the day a second file appears.
 

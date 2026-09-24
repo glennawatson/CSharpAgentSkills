@@ -163,10 +163,10 @@ namespace System.Diagnostics.CodeAnalysis
 required member itself needs `SetsRequiredMembersAttribute`. Keep every polyfill `internal` — a
 public one can collide with the real BCL type once the consumer's own TFM supplies it. `System
 .HashCode` is also absent on `netstandard2.0`; combine hashes by hand (`hash * 31 + next`) rather
-than add a `Microsoft.Bcl.HashCode` dependency for it. Verified: a `netstandard2.0` project with
-only the polyfills above compiles `sealed record`, `readonly record struct`, and a `required`
-member, and a `net10.0` consumer referencing it confirms structural equality still holds for all
-three. [PolySharp](https://www.nuget.org/packages/PolySharp) source-generates this same polyfill
+than add a `Microsoft.Bcl.HashCode` dependency for it. A `netstandard2.0` project with only the
+polyfills above compiles `sealed record`, `readonly record struct`, and a `required` member, and a
+`net10.0` consumer referencing it retains structural equality for all three.
+[PolySharp](https://www.nuget.org/packages/PolySharp) source-generates this same polyfill
 set (and more) if you'd rather not hand-maintain the file — reference it `PrivateAssets="all"` so
 it stays build-time-only.
 
@@ -223,10 +223,7 @@ Assert.True(trackedSteps.All(s => s.Outputs.All(o => o.Reason is IncrementalStep
 
 A step that reports `Modified` or `New` when nothing relevant to it changed is the caching bug —
 usually traced back to a raw `ISymbol`/`Compilation`/array leaking into that step's output type, or
-a `Combine` ordered so a volatile input sits upstream of a stable one. Verified: this pattern (two
-runs, an unrelated file edited between them, `TrackedSteps[name]` inspected) reports `Unchanged`/
-`Cached` for a `ForAttributeWithMetadataName` stage and a downstream `Combine` with
-`AnalyzerConfigOptionsProvider`, and reports the expected new source on the first run.
+a `Combine` ordered so a volatile input sits upstream of a stable one.
 
 ## Emitting diagnostics correctly
 
@@ -457,10 +454,6 @@ assertions are needed too. For general Roslyn callback cost once the generator i
 - [ ] Package targets `netstandard2.0`, pins Roslyn version with `PrivateAssets="all"`, sets `IsRoslynComponent`/`EnforceExtendedAnalyzerRules`, packs to `analyzers/dotnet/cs` with `DevelopmentDependency=true`
 - [ ] Snapshot test covers emitted source; cacheability verified separately from correctness
 
-## Sources
+## Further reading
 
-- [Incremental generators design doc](https://raw.githubusercontent.com/dotnet/roslyn/main/docs/features/incremental-generators.md)
-- [Incremental generators cookbook](https://raw.githubusercontent.com/dotnet/roslyn/main/docs/features/incremental-generators.cookbook.md)
-- [Microsoft.CodeAnalysis.Analyzers rules (RS1036 `EnforceExtendedAnalyzerRules`)](https://github.com/dotnet/roslyn-analyzers/blob/main/src/Microsoft.CodeAnalysis.Analyzers/Microsoft.CodeAnalysis.Analyzers.md)
-- Andrew Lock, "Creating a source generator" series (andrewlock.net): [Part 9 — avoiding performance pitfalls](https://andrewlock.net/creating-a-source-generator-part-9-avoiding-performance-pitfalls-in-incremental-generators/), [Part 10 — testing pipeline caching](https://andrewlock.net/creating-a-source-generator-part-10-testing-your-incremental-generator-pipeline-outputs-are-cacheable/), [Part 14 — supporting multiple SDK versions](https://andrewlock.net/creating-a-source-generator-part-14-supporting-multiple-sdk-versions-in-a-source-generator/)
-- [PolySharp](https://www.nuget.org/packages/PolySharp)
+Roslyn's [incremental generators cookbook](https://raw.githubusercontent.com/dotnet/roslyn/main/docs/features/incremental-generators.cookbook.md) covers additional patterns and edge cases.

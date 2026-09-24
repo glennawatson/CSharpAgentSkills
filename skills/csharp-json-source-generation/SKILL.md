@@ -37,9 +37,9 @@ internal partial class AppJson : JsonSerializerContext;
 - **Always set `JsonSourceGenerationOptions(JsonSerializerDefaults.Web)`** (or your own naming
   policy) on every context. A context with no options expects exact-case PascalCase property names.
   A service sending `{"id":5,"customer":"Ada"}` into a plain context silently deserializes into an
-  object of default values — no exception, wrong data. Verified: an `Order(int Id, string Customer)`
-  read through an unconfigured context back into `{"id":2,"name":"Grace"}`-shaped JSON produced
-  `Id=0, Name=null`; adding `JsonSerializerDefaults.Web` fixed it. This is the single most common
+  object of default values — no exception, wrong data. An `Order(int Id, string Customer)` read
+  through an unconfigured context against `{"id":2,"name":"Grace"}`-shaped JSON produces
+  `Id=0, Name=null`; adding `JsonSerializerDefaults.Web` fixes it. This is the single most common
   source-generation bug in the wild.
 - Other useful `[JsonSourceGenerationOptions]` members: `PropertyNamingPolicy` (or the
   `JsonSerializerDefaults.Web` shortcut), `DefaultIgnoreCondition` (e.g.
@@ -87,12 +87,12 @@ var json = JsonSerializer.Serialize(order, AppJson.Default.Order);
 var back = JsonSerializer.Deserialize(json, AppJson.Default.Order);
 ```
 
-Verified difference: `JsonSerializer.Serialize(order, options)` — even with
-`options.TypeInfoResolver` set to a context — still produces `IL2026`/`IL3050` warnings, because
-that overload is annotated `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]` unconditionally (the
-analyzer can't see through `options` to know a source-generated resolver is attached).
-`Serialize(order, AppJson.Default.Order)` produces zero warnings. Use the `JsonTypeInfo<T>` form at
-call sites where you can; fall back to `options` only when the type is chosen dynamically.
+`JsonSerializer.Serialize(order, options)` — even with `options.TypeInfoResolver` set to a context —
+still produces `IL2026`/`IL3050` warnings, because that overload is annotated
+`[RequiresUnreferencedCode]`/`[RequiresDynamicCode]` unconditionally (the analyzer can't see through
+`options` to know a source-generated resolver is attached). `Serialize(order, AppJson.Default.Order)`
+produces zero warnings. Use the `JsonTypeInfo<T>` form at call sites where you can; fall back to
+`options` only when the type is chosen dynamically.
 
 ### Wiring a context into `JsonSerializerOptions`
 
@@ -106,9 +106,9 @@ private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaul
 Build `JsonSerializerOptions` **once** and reuse it — constructing a new instance per call throws
 away the cached property/converter metadata and, worse, invites someone to reach for the
 reflection-based constructor overload out of habit. Call `options.MakeReadOnly()` after
-configuring it: it locks the instance (verified — a `WriteIndented` mutation after `MakeReadOnly()`
-throws `InvalidOperationException`) so a later contributor can't silently change shared behavior,
-and it's required before the options can be reused as a `TypeInfoResolver` source safely across
+configuring it: it locks the instance — a `WriteIndented` mutation after `MakeReadOnly()` throws
+`InvalidOperationException` — so a later contributor can't silently change shared behavior, and
+it's required before the options can be reused as a `TypeInfoResolver` source safely across
 threads.
 
 ### Combining multiple contexts
@@ -137,13 +137,13 @@ more specific/override context earlier.
 Set this in any project meant to stay AOT/trim-safe, even before you publish trimmed — it turns a
 forgotten reflection-based `Serialize`/`Deserialize` call into an immediate
 `InvalidOperationException` in ordinary CI/test runs instead of a silent trap that only surfaces
-after a trimmed publish. Verified: with the property set, a bare
-`JsonSerializer.Serialize(new Widget(1))` (no context, no resolver) throws
-`"Reflection-based serialization has been disabled for this application"` at the first call, on a
-normal `dotnet run` — no publish step needed. `PublishTrimmed`/`PublishAot` set this to `false`
-automatically if you don't set it yourself; verified an `IsAotCompatible=true` project publishing
-`-p:PublishAot=true` ran with `JsonSerializer.IsReflectionEnabledByDefault == false` and produced
-correct output with no IL warnings at build.
+after a trimmed publish. With the property set, a bare `JsonSerializer.Serialize(new Widget(1))`
+(no context, no resolver) throws `"Reflection-based serialization has been disabled for this
+application"` at the first call, on a normal `dotnet run` — no publish step needed.
+`PublishTrimmed`/`PublishAot` set this to `false` automatically if you don't set it yourself: an
+`IsAotCompatible=true` project publishing `-p:PublishAot=true` runs with
+`JsonSerializer.IsReflectionEnabledByDefault == false` and produces correct output with no IL
+warnings at build.
 
 `IsAotCompatible=true` (see `csharp-aot-trimming`) is what surfaces `IL2026`/`IL3050` at build time
 for any reflection-based JSON call still in the project — treat those as the thing to fix, not
@@ -158,9 +158,9 @@ var order = await client.GetFromJsonAsync("orders/5", AppJson.Default.Order);
 
 Both `GetFromJsonAsync`/`PostAsJsonAsync`/`JsonContent.Create` take a `JsonTypeInfo<T>` or a
 `JsonSerializerContext` overload — use them instead of the generic `<T>` overloads so the call is
-AOT-safe. Verified: `GetFromJsonAsync(url, Context.Default.T)` against a stub handler round-trips
-correctly; the same call through a context missing `JsonSerializerDefaults.Web` silently produced a
-zeroed-out record (the naming trap above, reproduced over HTTP).
+AOT-safe. `GetFromJsonAsync(url, Context.Default.T)` round-trips correctly; the same call through a
+context missing `JsonSerializerDefaults.Web` silently produces a zeroed-out record (the naming trap
+above, reproduced over HTTP).
 
 ## Refit
 
@@ -203,18 +203,18 @@ internal sealed record PickupShipment(string Reference, string Store) : Shipment
 
 Declare polymorphism with `[JsonPolymorphic]`/`[JsonDerivedType]` attributes, not a runtime contract
 modifier (`DefaultJsonTypeInfoResolver.Modifiers`) — a contract modifier relies on
-`DefaultJsonTypeInfoResolver`, which is reflection-based and unsafe under Native AOT. Verified
-round-trip: serializing a `CourierShipment` through the base `Shipment` root writes the `kind`
-discriminator and deserializes back to the concrete `CourierShipment` type via
-`JsonSerializer.Deserialize(json, AppJson.Default.Shipment)`.
+`DefaultJsonTypeInfoResolver`, which is reflection-based and unsafe under Native AOT. Serializing a
+`CourierShipment` through the base `Shipment` root writes the `kind` discriminator and deserializes
+back to the concrete `CourierShipment` type via `JsonSerializer.Deserialize(json,
+AppJson.Default.Shipment)`.
 
 - **Enums as strings**: either `[JsonConverter(typeof(JsonStringEnumConverter<TEnum>))]` on the enum
   (use the generic form — the non-generic `JsonStringEnumConverter` isn't Native AOT-supported), or
   `UseStringEnumConverter = true` in `[JsonSourceGenerationOptions]` for a blanket policy across the
   context. Custom names per member: `[JsonStringEnumMemberName]` (.NET 9+).
 - **Records/init/required**: source generation fully supports positional records, `init` setters,
-  and `required` members — verified a `record` with `required int X { get; init; }` members
-  serializes/deserializes correctly through a generated context with no extra attributes needed.
+  and `required` members — a `record` with `required int X { get; init; }` members serializes and
+  deserializes correctly through a generated context with no extra attributes needed.
 - **`required` means "must be in the JSON".** Deserialization throws `JsonException` when a
   `required` property is missing from the document, even if its type is nullable. Don't add
   `required` to satisfy the nullable compiler: when in doubt, make reference-typed members nullable
@@ -235,19 +235,19 @@ discriminator and deserializes back to the concrete `CourierShipment` type via
   disabled by default (see `dotnet-file-based-apps`), so declare the record(s) and the context in
   the same file rather than reaching for an anonymous object.
 
-## .NET 11 additions (verified on 11.0.100-rc.1)
+## .NET 11 additions
 
 - `JsonNamingPolicy.PascalCase` — a new built-in policy alongside camelCase/snake_case/kebab-case.
-  Verified: `JsonNamingPolicy.PascalCase.ConvertName("helloWorld")` → `"HelloWorld"`.
+  `JsonNamingPolicy.PascalCase.ConvertName("helloWorld")` → `"HelloWorld"`.
 - Per-member naming policy overrides via `[JsonNamingPolicy]` on an individual property/class,
   independent of the context/options-level `PropertyNamingPolicy`.
 - `JsonSerializerOptions.GetTypeInfo<T>()`/`TryGetTypeInfo<T>(out JsonTypeInfo<T>)` — generic
   overloads that return `JsonTypeInfo<T>` directly, no manual downcast from the non-generic
-  `GetTypeInfo(Type)`. Verified working against a `Combine`d resolver.
+  `GetTypeInfo(Type)`. Works against a `Combine`d resolver.
 - Union type serialization (`JsonTypeInfoKind.Union`, `JsonUnionAttribute`,
   `JsonUnionTypeStructuralClassifier`) for C# union types (a C# 15 preview language feature) — both
-  the reflection-based serializer and source generator support it; not exercised here since union
-  types require the preview language feature enabled.
+  the reflection-based serializer and source generator support it; union types require the preview
+  language feature enabled.
 - `JsonSerializerOptions.InferClosedTypePolymorphism` — infers polymorphic metadata for a closed
   C# hierarchy without requiring `[JsonDerivedType]` on every case; explicit attributes still win
   when present.

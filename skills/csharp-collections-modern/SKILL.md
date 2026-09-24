@@ -1,6 +1,6 @@
 ---
 name: csharp-collections-modern
-description: Use when writing or reviewing C#/.NET code that builds, exposes, or iterates collections — collection expressions and target typing, params collections/spans, choosing between Dictionary/HashSet (the default), FrozenDictionary/FrozenSet (rarely, only for a long-lived build-once/read-many table), ImmutableArray/ImmutableDictionary, arrays, and List<T>, exposing read-only collection types in public APIs, Span<T>/stackalloc for local work, CollectionsMarshal, and when LINQ is fine vs when it isn't.
+description: Use when writing or reviewing C#/.NET code that builds, exposes, or iterates collections — collection expressions and target typing, params collections/spans, choosing between Dictionary/HashSet (the default), FrozenDictionary/FrozenSet (rarely, only for a long-lived build-once/read-many table), ImmutableArray/ImmutableDictionary, arrays, and List<T>, using concrete collection types instead of IList/ICollection/IDictionary/ISet interfaces, Span<T>/stackalloc for local work, CollectionsMarshal, and when LINQ is fine vs when it isn't.
 ---
 
 # Modern collections (C# 13/14, .NET 10)
@@ -108,21 +108,33 @@ static readonly FrozenDictionary<string, Route> Routes =
 FrozenDictionary<string, Command> Lookup() => _raw.ToFrozenDictionary(); // called per request
 ```
 
-## Exposing collections in APIs
+## Use concrete collection types, not collection interfaces
 
-Expose the narrowest read-only shape the caller actually needs, not your storage type:
+Declare collections with their concrete types: `List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `T[]`, `ImmutableArray<T>`. Don't use the mutable collection interfaces (`IList<T>`, `ICollection<T>`, `IDictionary<TKey, TValue>`, `ISet<T>`) for fields, locals, parameters or return types. This matches the .NET analyzer guidance (CA1859, "use concrete types when possible for improved performance"):
 
-- `IReadOnlyList<T>` when callers need indexing/count.
-- `IReadOnlyCollection<T>` when they need only `Count` + enumeration.
-- `IEnumerable<T>` when they only ever iterate once, forward, no count.
-- Keep the mutable `List<T>`/`Dictionary<K,V>` private; return the read-only view (or an `ImmutableArray<T>` if you also want to stop internal identity leaking — reach for `FrozenDictionary<K,V>` here only if it's the same long-lived, build-once-read-often table discussed below, not by default).
+- **Speed:** calls through a concrete type are direct and can be inlined; through an interface they're virtual dispatch. `foreach` over a `List<T>` uses its struct enumerator; over `IList<T>` the enumerator is boxed on older runtimes.
+- **Clarity:** the concrete type tells the reader exactly what they have: its complexity, ordering, whether it's a copy.
+- **Honesty:** the mutable interfaces promise operations that often throw (`IList<T>.Add` on an array, a read-only wrapper), so the type guarantees nothing.
+
+```csharp
+// ✅ concrete types throughout
+private readonly Dictionary<string, Order> _byId = [];
+public List<Order> FindOpen(HashSet<string> ids) { ... }
+
+// ❌ interface types that hide what the collection is and cost dispatch
+private readonly IDictionary<string, Order> _byId = new Dictionary<string, Order>();
+public IList<Order> FindOpen(ICollection<string> ids) { ... }
+```
+
+Narrow exceptions:
+
+- **`IEnumerable<T>`** for a genuinely lazy or streaming sequence (an iterator, a query you don't want to materialise). Anything already materialised goes out as its concrete type.
+- **`IReadOnlyList<T>` / `IReadOnlyDictionary<TKey, TValue>`** only when a public API deliberately exposes a read-only view of internal state without copying it. The view is a contract, not protection: a caller can cast back to `List<T>`. Return `ImmutableArray<T>` or a copy when the guarantee matters. Reach for `FrozenDictionary<TKey, TValue>` only for the long-lived, build-once table discussed above, not by default.
 
 ```csharp
 private readonly List<Order> _orders = [];
-public IReadOnlyList<Order> Orders => _orders;   // ✅ view, no copy, can't be mutated through it
+public IReadOnlyList<Order> Orders => _orders;   // read-only view of internal state, no copy
 ```
-
-`IReadOnlyList<T>` here does **not** stop the caller from casting back to `List<T>` and mutating it if it *is* a `List<T>` — it's an API contract, not a security boundary. Return an actual immutable/frozen type if you need that guarantee.
 
 ## `Span<T>` / `ReadOnlySpan<T>` / `stackalloc` for local work
 
@@ -191,7 +203,8 @@ If a method returns `IEnumerable<T>` and the caller might enumerate more than on
 - [ ] On `net11.0`+/C# 15: `[with(capacity: n), ...]`/`[with(comparer), ...]` used instead of `new List<T>(n) { ... }` boilerplate where the TFM allows it
 - [ ] `Dictionary`/`HashSet` by default; `Frozen*` only in a long-running process, with a benchmark that includes construction cost
 - [ ] `Immutable*` only where structural sharing/immutability is actually needed
-- [ ] Public members expose `IReadOnlyList<T>`/`IReadOnlyCollection<T>`/`IEnumerable<T>`, not internal mutable storage
+- [ ] Collections declared as concrete types (`List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `T[]`), never `IList<T>`/`ICollection<T>`/`IDictionary<TKey, TValue>`/`ISet<T>`
+- [ ] `IEnumerable<T>` only for lazy sequences; `IReadOnlyList<T>`/`IReadOnlyDictionary<TKey, TValue>` only for a deliberate read-only view of internal state
 - [ ] Spans/`stackalloc` stay local, bounded, and never cross `await`
 - [ ] `CollectionsMarshal` refs/spans used immediately, not held across a resize
 - [ ] LINQ avoided on measured hot loops; no query re-enumerated by accident

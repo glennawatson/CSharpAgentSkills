@@ -143,7 +143,7 @@ public class OrderServiceTests
 }
 ```
 
-- With `InstancePerTestCase`, plain field initializers or a constructor do what `[SetUp]` used to — reach for `[SetUp]`/`[TearDown]` only when setup needs to be `async Task` (constructors can't be async) or needs the `TestContext`.
+- With `InstancePerTestCase`, plain field initializers or a constructor can do what `[SetUp]` does — reach for `[SetUp]`/`[TearDown]` only when setup needs to be `async Task` (constructors can't be async) or needs the `TestContext`.
 - `IDisposable`/`IAsyncDisposable` on the fixture is honored per instance under `InstancePerTestCase`, so it's a reasonable teardown spot too — pick one pattern (hooks or dispose) per fixture, don't mix.
 - `[OneTimeSetUp]`/`[OneTimeTearDown]` are still per-class (static-ish, run once regardless of instance lifecycle) — use them only for genuinely expensive shared resources (a container, a compiled schema), and make the fixture `[NonParallelizable]` if that resource isn't safe for concurrent use.
 - Async setup: `[SetUp]`/`[OneTimeSetUp]` can be `async Task` — never `async void`.

@@ -201,7 +201,7 @@ string Describe(Pet pet) => pet switch
 
 Prefer `union` when the case types are otherwise unrelated (no shared base makes sense) and you just need "exactly one of these shapes." Prefer a `closed` hierarchy when the cases share real inherited members/behavior. See `csharp-modern-types` for the full decision between `union`, `closed`, and a classic `abstract` base.
 
-Some parts of the union spec aren't implemented yet in the RC1 compiler — verify a given union pattern compiles before relying on it in a codebase still tracking .NET 11 previews/RC.
+Some parts of the union spec aren't implemented in preview/RC compilers — verify a given union pattern compiles before relying on it in a codebase tracking .NET 11 previews/RC.
 
 
 

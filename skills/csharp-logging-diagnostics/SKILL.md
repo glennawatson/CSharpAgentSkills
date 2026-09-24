@@ -126,7 +126,7 @@ public sealed class OrderMetrics
 
 ## .NET 11: declarative Activity tracing rules (net11.0+, `Microsoft.Extensions.Diagnostics`)
 
-`services.AddTracing(...)` (namespace `Microsoft.Extensions.Diagnostics.Tracing`, verified against the SDK's `11.0.0-rc.1` ref assembly) registers `Activity` listeners declaratively instead of you constructing an `ActivityListener` and calling `ActivitySource.AddActivityListener` by hand:
+`services.AddTracing(...)` (namespace `Microsoft.Extensions.Diagnostics.Tracing`) registers `Activity` listeners declaratively instead of you constructing an `ActivityListener` and calling `ActivitySource.AddActivityListener` by hand:
 
 ```csharp
 services.AddTracing(tracing => tracing
@@ -144,7 +144,7 @@ services.AddTracing(tracing => tracing
 
 ## .NET 11: `MemoryCache` metrics
 
-`Microsoft.Extensions.Caching.Memory`'s `MemoryCache` picked up a new constructor overload taking `IMeterFactory` (`MemoryCache(IOptions<MemoryCacheOptions>, ILoggerFactory, IMeterFactory)` — confirmed present in the `11.0.0-rc.1` package, absent in `10.0.0`). When you register the cache through DI (`services.AddMemoryCache()`) and `IMeterFactory` is available (`services.AddMetrics()`), the cache reports its own OpenTelemetry metrics (hit/miss counts, entry count, eviction reasons) automatically — no code change at cache call sites, and no custom `Counter<T>` wiring needed just to see cache effectiveness. If you previously hand-rolled counters around `IMemoryCache.TryGetValue`/`Set` purely to track hit rate, drop them once you're on net11.0's `MemoryCache` and confirm the emitted instrument names against the installed package version.
+`Microsoft.Extensions.Caching.Memory`'s `MemoryCache` has a constructor overload taking `IMeterFactory` (`MemoryCache(IOptions<MemoryCacheOptions>, ILoggerFactory, IMeterFactory)`, present from the `11.0.0` package on, absent in `10.0.0`). When you register the cache through DI (`services.AddMemoryCache()`) and `IMeterFactory` is available (`services.AddMetrics()`), the cache reports its own OpenTelemetry metrics (hit/miss counts, entry count, eviction reasons) automatically — no code change at cache call sites, and no custom `Counter<T>` wiring needed just to see cache effectiveness. Drop any hand-rolled counters around `IMemoryCache.TryGetValue`/`Set` that exist purely to track hit rate once on net11.0's `MemoryCache`, and confirm the emitted instrument names against the installed package version.
 
 ## `EventSource` — briefly
 

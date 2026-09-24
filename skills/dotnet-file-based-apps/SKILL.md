@@ -37,7 +37,7 @@ All go at the top of the file, prefixed `#:`.
 | `#:project ../Lib/Lib.csproj` | Reference a real project — how you probe *this repo's* types |
 | `#:include helpers.cs` | Pull in another file (SDK 10.0.300+). Cannot add top-level statements |
 
-Pipe from stdin for one-liners: `echo 'Console.WriteLine(1);' | dotnet run -`. Stdin mode materializes the piped source into its own runfile cache directory rather than building in place, so it does **not** pick up a `Directory.Build.props`/`Directory.Packages.props`/`nuget.config` from the caller's current directory the way `dotnet run file.cs` picks one up from the file's own directory and parents — `global.json` SDK pinning still applies to both. See `dotnet-run` for the verified details.
+Pipe from stdin for one-liners: `echo 'Console.WriteLine(1);' | dotnet run -`. Stdin mode materializes the piped source into its own runfile cache directory rather than building in place, so it does **not** pick up a `Directory.Build.props`/`Directory.Packages.props`/`nuget.config` from the caller's current directory the way `dotnet run file.cs` picks one up from the file's own directory and parents — `global.json` SDK pinning still applies to both. See `dotnet-run` for details.
 
 Pass environment variables to the run without exporting them in the shell: `dotnet run probe.cs -e FOO=bar` (repeatable). Format a file-based app the same way as a project: `dotnet format probe.cs` (SDK 11+) runs analyzers/style fixers directly against the single file — no `.csproj` needed for either.
 
@@ -74,7 +74,7 @@ Clear everything with `dotnet clean file-based-apps` (`--days N` to bound it).
 
 ## `System.Text.Json` needs a source-generated context
 
-File-based apps run with reflection-based serialization disabled, so `JsonSerializer.Serialize(new { … })` or a bare `Deserialize<T>(…)` throws `InvalidOperationException: Reflection-based serialization has been disabled for this application` (verified on SDK 11.0.100-rc.1 with `dotnet run`). Anonymous types can't be source-generated, so declare a real type, add a `[JsonSerializable]` partial `JsonSerializerContext` in the same file, and pass its generated `TypeInfo` to the call:
+File-based apps run with reflection-based serialization disabled, so `JsonSerializer.Serialize(new { … })` or a bare `Deserialize<T>(…)` throws `InvalidOperationException: Reflection-based serialization has been disabled for this application`. Anonymous types can't be source-generated, so declare a real type, add a `[JsonSerializable]` partial `JsonSerializerContext` in the same file, and pass its generated `TypeInfo` to the call:
 
 ```csharp
 using System.Text.Json;

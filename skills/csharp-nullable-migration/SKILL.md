@@ -21,7 +21,7 @@ Enabling nullable solution-wide in one commit produces a warning wall nobody rea
 | `<Nullable>annotations</Nullable>` | `?` is legal syntax and is *emitted* in metadata for callers, but this project gets **no warnings of its own** | Mid-migration on a project whose own code isn't clean yet, when a leaf project it depends on needs its public surface annotated so callers benefit — lets you annotate the API without fixing every internal warning first |
 | `<Nullable>warnings</Nullable>` | Warnings fire only where the compiler has *real* nullability info to reason from — i.e. when this project's code touches an already-annotated dependency (the BCL, or another project already on `enable`); `?` is **not** legal syntax in this project's own code | Rare: surfacing how badly a project's *use of already-annotated dependencies* is broken, before committing to annotate the project itself — not a general scouting tool for its own logic, and not a resting state |
 
-Verify these yourself before relying on the distinction, because the third one is counter-intuitive — set each in a scratch project and check with two cases: (a) a local `return null;` on a non-nullable return type, using only this project's own types, and (b) dereferencing an already-nullable BCL member (e.g. `Environment.GetEnvironmentVariable(...).Length` without a check) with no `?` used anywhere. Result: `enable` warns on both. `annotations` warns on neither (and compiles a `?` silently). `warnings` warns on **(b) only** — it stays silent on (a), because without annotations turned on, this project's own declared types are all "oblivious" (no tracked nullable state), so a bare `return null;` on a plain `string` has nothing to compare against; it only sees a real nullable/non-nullable distinction where one already exists in an annotated dependency it calls into. Writing `string? Foo()` in `warnings` mode is rejected as CS8632 ("nullable annotation... only in `#nullable` annotations context") since annotations aren't turned on. In practice this makes `warnings` far less useful for gauging a project's own migration effort than it sounds — `annotations` (to ship the API) or just running `enable` on a throwaway branch to get the real count (below) are the tools actually worth reaching for.
+The third setting is easy to misjudge, so check it in a scratch project before relying on it, with two cases: (a) a local `return null;` on a non-nullable return type, using only this project's own types, and (b) dereferencing an already-nullable BCL member (e.g. `Environment.GetEnvironmentVariable(...).Length` without a check) with no `?` used anywhere. `enable` warns on both. `annotations` warns on neither (and compiles a `?` silently). `warnings` warns on **(b) only** — it stays silent on (a), because without annotations turned on, this project's own declared types are all "oblivious" (no tracked nullable state), so a bare `return null;` on a plain `string` has nothing to compare against; it only sees a real nullable/non-nullable distinction where one already exists in an annotated dependency it calls into. Writing `string? Foo()` in `warnings` mode is rejected as CS8632 ("nullable annotation... only in `#nullable` annotations context") since annotations aren't turned on. This makes `warnings` far less useful for gauging a project's own migration effort than it sounds — `annotations` (to ship the API) or just running `enable` on a throwaway branch to get the real count (below) are the tools actually worth reaching for.
 
 Per-file `#nullable enable` (a directive, not an MSBuild property) is the finer-grained tool inside a project that isn't fully converted yet — useful for converting one file at a time within a large project, or for keeping a handful of legacy files opted out (`#nullable disable`) after the project flips to `enable`. `csharp-nullability` covers directive placement; this skill covers when to reach for file-level vs project-level rollout.
 
@@ -47,7 +47,7 @@ For a per-project or per-file breakdown (which is what you actually need to plan
 
 ## What a rewriter can do safely
 
-These are provable from the syntax tree plus, where noted, the semantic model — not guesses. Build one throwaway single-file `dotnet run` app per transform, following `roslyn-rewriters` conventions exactly (dry-run by default, `--write` to apply, `CSharpSyntaxRewriter` to preserve trivia, skip `obj`/`bin`). A worked, verified example is in `./examples/annotate-null-returns.cs`.
+These are provable from the syntax tree plus, where noted, the semantic model — not guesses. Build one throwaway single-file `dotnet run` app per transform, following `roslyn-rewriters` conventions exactly (dry-run by default, `--write` to apply, `CSharpSyntaxRewriter` to preserve trivia, skip `obj`/`bin`). An example is in `./examples/annotate-null-returns.cs`.
 
 - **Add `#nullable enable` file headers** as the file-level rollout mechanism — syntax-only, trivial, but still diff it: a header above a file with a copyright banner needs to land in the right place, not before it.
 - **Annotate fields/params/returns as `?` where the code provably assigns or returns `null`.** "Provably" means: a field initialized `= null` or never assigned in every constructor path; a method whose only `return`s are `null` or a literally-nullable expression; a parameter the method body checks `if (x == null)` before using. This needs the **semantic model** for anything beyond a literal — data-flow analysis (`SemanticModel.AnalyzeDataFlow`) to confirm a field really is unassigned on every constructor path, not just the one you happened to read.
@@ -61,7 +61,7 @@ These are provable from the syntax tree plus, where noted, the semantic model �
   private Dictionary<string, string> _cache;
   ```
 
-- **Convert `if (x == null) throw ...`/early-return null-guards at public entry points to `ArgumentNullException.ThrowIfNull(x)`.** Syntax match on the `if` shape plus semantic confirmation that `x` is a parameter of a public method with reference type — see `csharp-nullability`'s guidance on why `ThrowIfNull` over a hand-rolled guard.
+- **Convert `if (x == null) throw ...`/early-return null-guards at public entry points to `ArgumentNullException.ThrowIfNull(x)`, and add that guard where CA1062 would flag its absence.** Syntax match on the `if` shape plus semantic confirmation that `x` is a parameter of a public method with reference type — see `csharp-nullability`'s guidance on why `ThrowIfNull` over a hand-rolled guard. Tool: `roslyn-guard-rewriters`' `add-null-guards.cs`, covered in "Adding null guards at public boundaries" below.
 
   ```csharp
   // before
@@ -188,7 +188,7 @@ You still own consistency: spot-check a sample of what came back, watch for a wo
 
 `./examples/annotate-null-returns.cs` implements the first mechanical bullet above end to end: it walks a folder, finds methods whose body provably `return`s a null literal, and adds `?` to the return type — skipping return types that are already `?`, value types, bare generic `T`, `override`s, and interface implementations (each for the reason given in the source comments: those four need a contract-level decision, not a per-method one).
 
-It was run against a small sample library (`Nullable` disabled) with cases for every skip rule — a plain method, an expression-bodied method, an already-`?` method, an `override`, an interface implementation, a generic `T` method, and a method whose *local function* (not the method itself) returns null:
+Run against a sample project with cases for every skip rule — a plain method, an expression-bodied method, an already-`?` method, an `override`, an interface implementation, a generic `T` method, and a method whose *local function* (not the method itself) returns null — the dry run reports only the methods it would annotate:
 
 ```
 $ dotnet run annotate-null-returns.cs -- SampleLib
@@ -198,20 +198,24 @@ $ dotnet run annotate-null-returns.cs -- SampleLib
 would rewrite SampleLib/Repo.cs (3 method(s))
 ```
 
-`--write` applied exactly those three, and left `AlreadyNullable` (already `?`), `Count` (value type, no null return), `Describe`'s `override`, `Find` (interface implementation), `GetDefault<T>` (bare `T`), and `NotAffectedByLocalFunction` (the null return is in a nested local function, not the method itself) untouched — matches the skip list by design, confirmed by reading the diff.
+`--write` applies exactly those three and leaves `AlreadyNullable` (already `?`), `Count` (value type, no null return), `Describe`'s `override`, `Find` (interface implementation), `GetDefault<T>` (bare `T`), and `NotAffectedByLocalFunction` (the null return is in a nested local function, not the method itself) untouched — matching the skip list by design; read the diff to confirm.
 
-Then `<Nullable>enable</Nullable>` was turned on and the project built:
-
-- **Before the rewrite**, with nullable enabled: **7** `CS8603` ("possible null reference return") warnings, one per method that returns a null literal.
-- **After `--write`**, same build: **4** `CS8603` warnings remain — exactly the `override`, the interface implementation, the generic method, and the local-function case, i.e. the ones that need a human to decide the contract (per the triage table above).
-- Build succeeded both times, 0 errors.
+With `<Nullable>enable</Nullable>` turned on, the rewrite closes most of the `CS8603` ("possible null reference return") warnings — one per method that returns a null literal — and leaves the `override`, the interface implementation, the generic method, and the local-function case outstanding, i.e. the ones that need a human to decide the contract (per the triage table above).
 
 This is the shape to expect from a real rewriter pass: it closes the mechanical majority and leaves a small, correctly-flagged remainder for triage — it doesn't (and shouldn't) drive the count to zero by itself.
+
+## Adding null guards at public boundaries
+
+Annotating `?`/non-`?` gets a project's *own* code honest about nullability. It does nothing for a caller in a project that hasn't turned nullable on at all — that caller can still pass `null` into a non-nullable parameter with no warning on their end, and the callee finds out via `NullReferenceException` three stack frames later instead of a clear `ArgumentNullException` at the boundary. That's exactly the gap [CA1062](https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1062) ("Validate arguments of public methods") targets, and it's the reason this is a **separate, later pass**: run it after the annotation passes above, once a project's own `?`/non-`?` signatures are settled, so the rewriter isn't guarding a parameter whose nullability is about to change out from under it.
+
+The tool for this pass — a standalone rewriter ported from CA1062's analyzer/dataflow source and CA1510's fixer shape, finding and inserting `ArgumentNullException.ThrowIfNull(p)` guards itself with no analyzer required — now lives in `roslyn-guard-rewriters` as `add-null-guards.cs`, alongside its sibling `modernize-guards.cs` (which converts *existing* hand-written guards to the full `ThrowIf*` family, CA1510-CA1513). See that skill for the per-rule table, the exact skip list (iterator methods reported not rewritten, no path-sensitivity, no interprocedural validation, and the rest), the recommended order (add guards, then modernize existing ones), and before/after diagnostic counts. This skill still owns *when* in a nullable rollout to run it — after the annotation passes, as above — and defers the mechanics entirely to `roslyn-guard-rewriters`.
+
+For the rest of the modern `ThrowIf*` guard-clause catalogue (`ArgumentException.ThrowIfNullOrEmpty`, `ArgumentOutOfRangeException.ThrowIfNegative`, `ObjectDisposedException.ThrowIf`, and friends) beyond null checks, see `csharp-guard-clauses` for the target-state catalogue and `roslyn-guard-rewriters` for the tool that converts existing code to it at scale.
 
 ## Anti-patterns
 
 - Setting `<Nullable>enable</Nullable>` solution-wide in one commit and letting the warning count sit in the thousands — nobody reads a wall that size, and it invites bulk suppression instead of real fixes.
-- Treating `<Nullable>warnings</Nullable>` as a general scouting tool for a project's own code — verified above, it stays silent on the project's own oblivious-typed null returns and only flags contact with already-annotated dependencies.
+- Treating `<Nullable>warnings</Nullable>` as a general scouting tool for a project's own code — it stays silent on the project's own oblivious-typed null returns and only flags contact with already-annotated dependencies.
 - A rewriter that inserts `!` or adds `?` to make a warning disappear without tracing back to a provable null site — indistinguishable in effect from suppressing the warning outright.
 - A single rewriter pass mixing multiple transforms (annotation + `ThrowIfNull` + `!` removal) so a bad interaction can't be isolated or reverted independently.
 - Annotating an `override` or interface-implementing method's signature in isolation without reconciling the base/interface contract — produces the exact CS8765/CS8767 mismatch this skill's triage table exists to catch.
@@ -232,4 +236,5 @@ This is the shape to expect from a real rewriter pass: it closes the mechanical 
 - [ ] Overrides/interface implementations reconciled at the contract level, not per-override
 - [ ] Public API nullability changes flagged for deliberate review, not auto-annotated
 - [ ] Deserialized (System.Text.Json) types use nullable reference members, not `required`, unless every producer is confirmed to send the field; missing values handled per type where consumed
+- [ ] Null guards (`roslyn-guard-rewriters`' `add-null-guards.cs`) run *after* annotation passes settle a project's `?`/non-`?` signatures, one project at a time, with the real CA1062/CA1510 run afterward as the check — not as a substitute for it
 - [ ] Tests run (not just build) after every pass; fanned-out triage workers verified against the real gate, not self-reports

@@ -55,7 +55,7 @@ Never say a change is complete on the strength of "it should work." Completion i
 
 ## .NET 11: faster verification loops with `dotnet test`
 
-On the Microsoft.Testing.Platform-based `dotnet test` (opt in via `global.json`'s `"test": {"runner": "Microsoft.Testing.Platform"}`; SDK 11 flags, confirmed via `dotnet test --help`), a few flags make the gate faster to run repeatedly without weakening it:
+On the Microsoft.Testing.Platform-based `dotnet test` (opt in via `global.json`'s `"test": {"runner": "Microsoft.Testing.Platform"}`; SDK 11 flags), a few flags make the gate faster to run repeatedly without weakening it:
 
 - `--no-dependencies` — skip rebuilding referenced projects when you know they haven't changed. Don't use it after touching shared code; that's exactly the "did I break something upstream" case this gate exists to catch.
 - `--maximum-failed-tests <N>` — stop the run once N failures are hit, so a broken change fails fast instead of grinding through the whole suite. Fine for an inner-loop rerun; run without it before declaring the gate clean, so you see the *actual* full result, not just "at least N things are broken."

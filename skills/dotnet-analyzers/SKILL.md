@@ -57,10 +57,9 @@ Turn on the rest of the pipeline in the same `Directory.Build.props`:
 </PropertyGroup>
 ```
 
-Verified empirically (`/tmp/analyzers-verify`, SDK 11.0.100-rc.1): with `AnalysisMode=All` and
-`EnforceCodeStyleInBuild=true`, both a CA rule (`CA1305`) and an IDE rule (`IDE0008`) fire on a
-plain `dotnet build` with no `.editorconfig` entry for either — `AnalysisMode` really is the
-fallback bucket for anything the file doesn't mention.
+With `AnalysisMode=All` and `EnforceCodeStyleInBuild=true`, both a CA rule (`CA1305`) and an IDE
+rule (`IDE0008`) fire on a plain `dotnet build` with no `.editorconfig` entry for either —
+`AnalysisMode` is the fallback bucket for anything the file doesn't mention.
 
 ### Adopting the RoslynCommonAnalyzers presets
 
@@ -91,28 +90,26 @@ for every rule in that category that isn't individually overridden — useful fo
 `dotnet_diagnostic.<ID>.severity` always wins over it — but see the precedence caveat below before
 relying on it: an explicit `AnalysisMode` changes whether it does anything at all.
 
-**Verified precedence, worked out from `dotnet build` behavior, not assumed** (three fresh projects,
-`AnalysisLevel=latest`, `EnforceCodeStyleInBuild=true`, SDK `11.0.100-rc.1`, target `net10.0`):
+**Precedence:**
 
-1. `dotnet_diagnostic.<ID>.severity = none`/`NoWarn` — the rule never fires, full stop. Confirmed:
+1. `dotnet_diagnostic.<ID>.severity = none`/`NoWarn` — the rule never fires, full stop.
    `<NoWarn>$(NoWarn);CA1822</NoWarn>` plus `TreatWarningsAsErrors=true` builds clean on a file that
    triggers `CA1822` — `NoWarn` wins over warnings-as-errors, it isn't a race.
 2. `dotnet_diagnostic.<ID>.severity = <level>` in `.editorconfig` sets that rule's severity
-   regardless of `AnalysisMode`. Confirmed: setting `CA1822` to `suggestion` in `.editorconfig`
-   removed it from the build-warning list even under `AnalysisMode=Recommended`.
+   regardless of `AnalysisMode`. Setting `CA1822` to `suggestion` in `.editorconfig` removes it from
+   the build-warning list even under `AnalysisMode=Recommended`.
 3. `AnalysisMode`/`AnalysisLevel`, **when `AnalysisMode` is set explicitly** (`Recommended`, `All`,
-   …) — this computes a per-rule severity that outranks category-level fallback. Confirmed: with
-   `AnalysisMode=All` set, `dotnet_analyzer_diagnostic.category-Performance.severity = error` had
-   **no effect** on `CA1822` (stayed `warning`) — an explicit `AnalysisMode` is not just a fallback
+   …) — this computes a per-rule severity that outranks category-level fallback. With
+   `AnalysisMode=All` set, `dotnet_analyzer_diagnostic.category-Performance.severity = error` has
+   **no effect** on `CA1822` (stays `warning`) — an explicit `AnalysisMode` is not just a fallback
    bucket, it wins over category-level severity for rules it computes a severity for.
 4. `dotnet_analyzer_diagnostic.category-<Category>.severity` — only actually takes effect as
    documented (a default for every rule in that category with no explicit `dotnet_diagnostic.<ID>`
-   entry) when `AnalysisMode` is **left unset** at its SDK default. Confirmed: removing
-   `AnalysisMode` entirely from the same project made the identical
-   `dotnet_analyzer_diagnostic.category-Performance.severity = error` promote `CA1822` to `error`.
-   **If your `Directory.Build.props` sets `AnalysisMode` explicitly — which this skill recommends —
-   category-level severity is not a reliable lever for CA rules; use per-rule
-   `dotnet_diagnostic.<ID>.severity` instead.**
+   entry) when `AnalysisMode` is **left unset** at its SDK default. Removing `AnalysisMode` entirely
+   from the same project makes the identical `dotnet_analyzer_diagnostic.category-Performance.severity
+   = error` promote `CA1822` to `error`. **If your `Directory.Build.props` sets `AnalysisMode`
+   explicitly — which this skill recommends — category-level severity is not a reliable lever for CA
+   rules; use per-rule `dotnet_diagnostic.<ID>.severity` instead.**
 5. `TreatWarningsAsErrors` / `WarningsAsErrors` — promotes whatever severity survived steps 1–4
    from warning to error. It cannot resurrect a rule steps 1–2 silenced.
 

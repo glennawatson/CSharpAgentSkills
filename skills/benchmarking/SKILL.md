@@ -39,8 +39,8 @@ taskset -c 0-6 nice -n -20 dotnet run -c Release --project <benchmarks> -- \
 - **Governor** — `cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` should say `performance`.
   Disabling boost tightens things further but needs root.
 
-Measured effect of doing this: error on a ~570 ms benchmark fell from ±241 ms to ±18 ms, and on a
-~390 ms one from ±558 ms to ±5.9 ms. Before, nothing under about 5% was visible at all.
+Pinning and isolating like this can cut measurement error by an order of magnitude — without it,
+differences under about 5% are often invisible.
 
 ## Reading the result
 

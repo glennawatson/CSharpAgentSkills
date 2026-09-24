@@ -195,7 +195,7 @@ A `net*-windows` (WPF, WinForms, WinUI/Windows App SDK) or `net4x` TFM is not "u
 
 Set it once, unconditionally, in the repo's `Directory.Build.props` — it's a no-op on a Windows host, so there's no reason to condition it on OS. This is exactly what ReactiveUI's `src/Directory.Build.props` does.
 
-Verified on Linux (SDK `11.0.100-rc.1`):
+On Linux:
 
 - A `net10.0-windows` WPF/WinForms project **without** `EnableWindowsTargeting` fails restore/build with:
   ```
@@ -215,14 +215,14 @@ Verified on Linux (SDK `11.0.100-rc.1`):
 
   See `dotnet-test-platforms` for running the matrix; `csharp-verification` for what counts as a verified build vs. a skipped one.
 
-What's confirmed to work off-Windows: plain compilation of WPF/WinForms/`net4x` class libraries and apps (`UseWPF`/`UseWindowsForms`), including multi-targeted projects that mix Windows and non-Windows TFMs. What's **not verified here — check current Microsoft docs before relying on it**, since it wasn't exercised in this environment:
+What works off-Windows: plain compilation of WPF/WinForms/`net4x` class libraries and apps (`UseWPF`/`UseWindowsForms`), including multi-targeted projects that mix Windows and non-Windows TFMs. **Check current Microsoft docs before relying on** the following — they need a Windows host or Windows-only tooling:
 
 - WinUI 3 / Windows App SDK projects that need MSIX packaging, or any step that invokes the Windows App SDK's packaging/deployment tooling.
 - XAML compiler tasks and designer-time builds that shell out to Windows-only components.
 - COM references (`<COMReference>`) — these resolve via the Windows type library importer, which needs Windows.
 - Code-signing steps and any `Publish`/`ClickOnce` pipeline that assumes a Windows toolchain.
 
-Treat plain compile (`dotnet build`) as the thing `EnableWindowsTargeting` reliably buys you off-Windows; treat packaging/signing/COM/designer tooling as "verify on the actual doc/tooling before assuming it works."
+Treat plain compile (`dotnet build`) as the thing `EnableWindowsTargeting` reliably buys you off-Windows; treat packaging/signing/COM/designer tooling as needing verification against the actual doc/tooling before assuming it works.
 
 CI pattern: Linux legs run the full `dotnet build`/`dotnet restore` across every TFM including the Windows ones (catches compile errors early, on the cheaper/faster runners); a Windows leg is reserved for `dotnet test`/`dotnet run` of the Windows-TFM legs and anything above that genuinely needs Windows.
 

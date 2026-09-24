@@ -5,7 +5,7 @@ description: Use when a project targets net11.0/C# 15 (or is deciding whether to
 
 # C# 15 / .NET 11 — in-depth reference
 
-Check the project's actual `TargetFramework`/`LangVersion` first — see `csharp-language-versions`. Everything here needs `net11.0`+ (default `LangVersion` 15) unless noted. Never raise `LangVersion` or retarget a project just to use one of these. All snippets below were verified against .NET 11 SDK `11.0.100-rc.1` (`dotnet run file.cs`, see `dotnet-file-based-apps`); RC1-specific gaps are called out explicitly.
+Check the project's actual `TargetFramework`/`LangVersion` first — see `csharp-language-versions`. Everything here needs C# 15 (the default for `net11.0`) unless noted; some features also need runtime types that only exist on `net11.0` (unions), while `closed` can be polyfilled onto older targets (see `csharp-polyfills`). Don't change `LangVersion` or the target framework as a side effect of using one of these. RC1-specific gaps are called out explicitly.
 
 ## Union types — how they actually work
 
@@ -22,9 +22,9 @@ public struct Pet : System.Runtime.CompilerServices.IUnion
 }
 ```
 
-Verified by reflecting on a compiled `union Pet(Cat, Dog, Bird);` (case types are `record`s): the generated type has exactly one field, `<Value>k__BackingField : System.Object`, implements `System.Runtime.CompilerServices.IUnion`, and carries `System.Runtime.CompilerServices.UnionAttribute`. `typeof(Pet).IsValueType` is `true` — a union declaration is always a `struct`, never a `record struct` (that was an earlier proposal, rejected — see "Resolved: Is union declaration a record?" in the csharplang speclet).
+Reflecting on a compiled `union Pet(Cat, Dog, Bird);` (case types are `record`s) shows the generated type has exactly one field, `<Value>k__BackingField : System.Object`, implements `System.Runtime.CompilerServices.IUnion`, and carries `System.Runtime.CompilerServices.UnionAttribute`. `typeof(Pet).IsValueType` is `true` — a union declaration is always a `struct`, never a `record struct` (an earlier proposal considered and rejected — see "Resolved: Is union declaration a record?" in the csharplang speclet).
 
-**Any class or struct** can opt into union behavior just by carrying `[Union]`, implementing `IUnion`, and exposing matching creation members (constructors, or static `Create` factories via a nested `IUnionMembers` provider interface) plus a `Value` property — the `union` keyword is just the compiler-generated shorthand for the common case. Hand-authoring lets you add the *non-boxing access pattern* (`HasValue` + a `TryGetValue(out T)` per case type), which the compiler prefers for pattern matching when present. **The compiler-generated `union` declaration never emits `HasValue`/`TryGetValue`** — verified by reflecting on a generated union's public members: only the constructors and `Value` are present. So every `union X(...)` you declare with the shorthand syntax always goes through the boxing `object? Value` path; there is no way to opt a shorthand `union` declaration into the non-boxing pattern short of hand-writing the whole type yourself.
+**Any class or struct** can opt into union behavior just by carrying `[Union]`, implementing `IUnion`, and exposing matching creation members (constructors, or static `Create` factories via a nested `IUnionMembers` provider interface) plus a `Value` property — the `union` keyword is just the compiler-generated shorthand for the common case. Hand-authoring lets you add the *non-boxing access pattern* (`HasValue` + a `TryGetValue(out T)` per case type), which the compiler prefers for pattern matching when present. **The compiler-generated `union` declaration never emits `HasValue`/`TryGetValue`** — reflecting on a generated union's public members shows only the constructors and `Value` are present. So every `union X(...)` you declare with the shorthand syntax always goes through the boxing `object? Value` path; there is no way to opt a shorthand `union` declaration into the non-boxing pattern short of hand-writing the whole type yourself.
 
 ### Implicit conversions and exhaustive matching
 
@@ -35,11 +35,11 @@ string Describe(Pet pet) => pet switch
 {
     Cat c => $"cat {c.Name}",
     Dog d => $"dog {d.Name}",
-    Bird b => $"bird {b.Name}",   // omitting this produces CS8509 — verified
+    Bird b => $"bird {b.Name}",   // omitting this produces CS8509
 };
 ```
 
-Verified: omitting the `Bird` arm produces `warning CS8509: ... the pattern 'Bird' is not covered.` — real, compiler-checked exhaustiveness, not convention.
+Omitting the `Bird` arm produces `warning CS8509: ... the pattern 'Bird' is not covered.` — real, compiler-checked exhaustiveness, not convention.
 
 Union conversions rank as another form of user-defined conversion: an explicit user-defined `implicit`/`explicit operator` you declare on the union type takes priority over the union conversion for the corresponding case type. There are no *explicit* union conversions beyond the implicit ones — an explicit conversion existing to a case type doesn't imply one to the union.
 
@@ -67,7 +67,7 @@ The same rule applies to positional patterns: `p is (Cat)` needs the leading typ
 
 ### Generics
 
-Unions can be generic (`union Result<T>(T, System.Exception) where T : notnull;`) and work normally when matched against a **closed** (instantiated) generic type at the use site — verified `Result<string>` matching `string v => ...` compiles and runs correctly. Matching directly against an **open, unconstrained type parameter as a case type inside the generic method itself** (`T v => ...` inside a method with `<T>` still generic) hit `error CS8780: A variable may not be declared within a ... union matching` in RC1 — treat generic-parameter-as-case-type patterns as not fully baked yet and verify before relying on them.
+Unions can be generic (`union Result<T>(T, System.Exception) where T : notnull;`) and work normally when matched against a **closed** (instantiated) generic type at the use site — `Result<string>` matching `string v => ...` compiles and runs correctly. Matching directly against an **open, unconstrained type parameter as a case type inside the generic method itself** (`T v => ...` inside a method with `<T>` still generic) hits `error CS8780: A variable may not be declared within a ... union matching` in RC1 — treat generic-parameter-as-case-type patterns as not fully baked yet and verify before relying on them.
 
 ### Hand-writing a non-boxing union (the escape hatch from the boxing caveat)
 
@@ -98,7 +98,7 @@ This is real work — it's the trade-off for zero boxing on the matching path. `
 
 ### System.Text.Json (.NET 11)
 
-Serialization of a union writes the *underlying case value's* JSON with no wrapper or discriminator — `JsonSerializer.Serialize((Pet)new Cat("Tom"))` produces `{"Name":"Tom"}`, verified. **Deserialization back into the union type fails when case types are structurally ambiguous** — verified: deserializing `{"Name":"Tom"}` into `Pet` (cases `Cat`, `Dog`, `Bird`, all `record(string Name)`) throws `JsonException: JSON value type 'Object' is ambiguous for union type 'Pet' because multiple case types can use this value type. Specify a custom type classifier to support deserialization.` Round-tripping works fine when the case types are structurally distinguishable (e.g., `union NumOrText(int, string)` round-trips `42` and `"hello"` correctly, verified). If you need to serialize a union whose cases could collide in shape, give the case types distinct JSON shapes (a discriminator property) or don't rely on default `System.Text.Json` union support yet.
+Serialization of a union writes the *underlying case value's* JSON with no wrapper or discriminator — `JsonSerializer.Serialize((Pet)new Cat("Tom"))` produces `{"Name":"Tom"}`. **Deserialization back into the union type fails when case types are structurally ambiguous** — deserializing `{"Name":"Tom"}` into `Pet` (cases `Cat`, `Dog`, `Bird`, all `record(string Name)`) throws `JsonException: JSON value type 'Object' is ambiguous for union type 'Pet' because multiple case types can use this value type. Specify a custom type classifier to support deserialization.` Round-tripping works fine when the case types are structurally distinguishable (e.g., `union NumOrText(int, string)` round-trips `42` and `"hello"` correctly). If you need to serialize a union whose cases could collide in shape, give the case types distinct JSON shapes (a discriminator property) or don't rely on default `System.Text.Json` union support yet.
 
 ### What's not implemented / worth re-checking in RC1
 
@@ -109,24 +109,21 @@ Serialization of a union writes the *underlying case value's* JSON with no wrapp
 
 ## The boxing caveat — read this before using unions on a hot path
 
-**The shorthand `union` declaration stores its value in a single `object? Value` field. Any value-type case (`int`, an `enum`, a plain `struct`) is boxed the moment it's converted into the union, and every subsequent read unboxes.** This is not a hypothetical — it's the only storage strategy the current compiler emits, confirmed both by reflecting on the generated field (`System.Object`, not `System.Int32`) and by measuring allocations directly:
+**The shorthand `union` declaration stores its value in a single `object? Value` field. Any value-type case (`int`, an `enum`, a plain `struct`) is boxed the moment it's converted into the union, and every subsequent read unboxes.** This is not a hypothetical — it's the only storage strategy the current compiler emits (reflecting on the generated field shows `System.Object`, not `System.Int32`):
 
 ```csharp
 public union NumOrText(int, string);
 ```
 
 ```csharp
-long before = GC.GetAllocatedBytesForCurrentThread();
 NumOrText nt = default;
 for (int i = 0; i < 100_000; i++)
 {
-    nt = i;   // implicit conversion int -> union: boxes 'i' on every iteration
+    nt = i;   // implicit conversion int -> union: boxes 'i' on every iteration, a real heap allocation
 }
-long after = GC.GetAllocatedBytesForCurrentThread();
-// Allocated for 100,000 int->union conversions: 2,400,000 bytes (~24.0 bytes/op)
 ```
 
-A parallel loop doing plain `total += i` over the same 100,000 iterations allocates **0 bytes**. 24 bytes/op matches an `object`-boxed `int` on a 64-bit runtime (8-byte header + 8-byte method table pointer + 4-byte payload, rounded up to 8-byte alignment) — i.e., a real heap allocation per conversion, not virtual/free. This is a straight-line consequence of the lowering shown above; a `BenchmarkDotNet [MemoryDiagnoser]` run would show the same `Gen0`/`Allocated` column for any hot loop that repeatedly assigns a struct/int/enum case into a `union`-declared type.
+A parallel loop doing plain `total += i` over the same iterations allocates nothing. Each conversion costs the same as any other `object`-boxed `int` on a 64-bit runtime (an 8-byte header, an 8-byte method table pointer, and the payload, rounded up to 8-byte alignment) — not virtual/free. This is a straight-line consequence of the lowering shown above; a `BenchmarkDotNet [MemoryDiagnoser]` run shows a non-zero `Gen0`/`Allocated` column for any hot loop that repeatedly assigns a struct/int/enum case into a `union`-declared type.
 
 Implications:
 
@@ -148,13 +145,13 @@ string Describe(GateState g) => g switch
 {
     Open => "open",
     Closed => "closed",
-    // no default arm needed — verified: compiles clean, no CS8509
+    // no default arm needed — compiles clean, no CS8509
 };
 ```
 
 Rules, several non-obvious:
 
-- `closed` is a contextual modifier on `class` (including `record class`). It implies `abstract` — verified `typeof(GateState).IsAbstract == true` — and cannot combine with `sealed`, `static`, or an explicit `abstract` modifier.
+- `closed` is a contextual modifier on `class` (including `record class`). It implies `abstract` (`typeof(GateState).IsAbstract == true`) and cannot combine with `sealed`, `static`, or an explicit `abstract` modifier.
 - **Same-assembly, same-module restriction**: a type outside the declaring assembly (or module) cannot directly derive from a `closed` type — this is a compiler error, not a convention, unlike a plain `sealed`-base pattern which only stops derivation by discipline.
 - **Not transitive**: a class deriving from a `closed` class is not itself closed unless you mark it `closed` too. If you want exhaustiveness through a multi-level hierarchy, every intermediate level needs its own `closed`.
 - **Generic closed types** require every type parameter of a closed base to be used in a derived type's base-class specification (`class D1<U> : C<U>` is fine; `class D3<W> : C<int>` is an error) — this keeps a single derived generic instantiation mapped to each closed base instantiation, which is what makes exhaustiveness checking sound for generics.
@@ -176,34 +173,34 @@ Rules, several non-obvious:
   ```
 
 - **Subtype constraints don't refine exhaustiveness**: if a derived type adds a `where` constraint the closed base didn't have (e.g. `class D2<U> : C<U> where U : struct`), the compiler doesn't attempt to prove that constraint is unsatisfiable for a given call site — it still asks you to handle that subtype's case (or the base type) even when generic substitution would make it impossible in practice.
-- Lowering emits `[System.Runtime.CompilerServices.IsClosedType]` on the class — verified by reflection on a compiled closed type.
+- Lowering emits `[System.Runtime.CompilerServices.IsClosedType]` on the class.
 
-### Closed hierarchies are more portable than unions — verified
+### Closed hierarchies are more portable than unions
 
-Unlike `union` (which needs `UnionAttribute`/`IUnion` from the .NET 11 runtime and hard-fails on `net10.0` even with `LangVersion=15` forced — see Availability below), **`closed` only needs a marker attribute the compiler can be handed via a local polyfill**. Verified: `closed record class` on a `net10.0` project with `LangVersion=15` fails with `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.IsClosedTypeAttribute..ctor'` — but defining that attribute yourself (a plain empty `[AttributeUsage(AttributeTargets.Class)] sealed class IsClosedTypeAttribute : Attribute` in `System.Runtime.CompilerServices`, same trick as the classic `IsExternalInit` polyfill for `init`) makes it compile and run correctly on `net10.0`. This still needs an explicit `LangVersion=15` override on a non-`net11.0` TFM (against the general "don't bump LangVersion" guidance in `csharp-language-versions` — treat this as a deliberate, rare exception only if you actually need exhaustiveness on an older TFM and are willing to own the polyfill) — decide deliberately, it's not free.
+Unlike `union` (which needs `UnionAttribute`/`IUnion` from the .NET 11 runtime and hard-fails on `net10.0` even with `LangVersion=15` forced — see Availability below), **`closed` only needs a marker attribute the compiler can be handed via a local polyfill**. `closed record class` on a `net10.0` project with `LangVersion=15` fails with `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.IsClosedTypeAttribute..ctor'` — but defining that attribute yourself (a plain empty `[AttributeUsage(AttributeTargets.Class)] sealed class IsClosedTypeAttribute : Attribute` in `System.Runtime.CompilerServices`, same trick as the classic `IsExternalInit` polyfill for `init`) makes it compile and run correctly on `net10.0`. This still needs an explicit `LangVersion=15` override on a non-`net11.0` TFM (against the general "don't bump LangVersion" guidance in `csharp-language-versions` — treat this as a deliberate, rare exception only if you actually need exhaustiveness on an older TFM and are willing to own the polyfill) — decide deliberately, it's not free.
 
 ## Collection expression arguments — deeper notes
 
 Covered at a syntax level in `csharp-collections-modern`. Two points worth the extra depth:
 
 - `with(...)` binds to whichever construction path the target type would already use for a collection expression — a matching constructor for `new CollectionType(...)`, a matching parameter set on a `Create` factory method, or (for an interface target like `IDictionary<,>`) a single argument that must implement a well-known BCL comparer interface. It is resolved the same way plain `[...]` construction already picks a strategy; `with(...)` just threads extra arguments through that existing resolution instead of introducing a new one.
-- Verified: `List<string> names = [with(capacity: 10), "a", "b"];` produces a list with `Capacity == 10, Count == 2`; `HashSet<string> set = [with(StringComparer.OrdinalIgnoreCase), "a", "A"];` produces `Count == 1` (case-insensitive dedupe applied at construction, not after). Both confirm the constructor overload actually gets called with the argument, not just accepted syntactically.
+- `List<string> names = [with(capacity: 10), "a", "b"];` produces a list with `Capacity == 10, Count == 2`; `HashSet<string> set = [with(StringComparer.OrdinalIgnoreCase), "a", "A"];` produces `Count == 1` (case-insensitive dedupe applied at construction, not after) — the constructor overload actually gets called with the argument, not just accepted syntactically.
 - `with(...)` must be the *first* element; there is exactly one per collection expression, and no comma-vs-semicolon ambiguity was chosen deliberately (see the "Design Philosophy" section of the csharplang proposal) precisely to avoid `[1, 2]` (two elements) being confused with an arguments-then-elements list.
 
 ## Extension indexers, labeled break/continue
 
-Both are covered with working examples in `csharp-extension-members` and `csharp-language-versions` respectively — nothing to add beyond what's there except confirmation both compile and run as documented in RC1: a `this[int]` inside an `extension(T receiver)` block routes indexing syntax through the extension (verified), and `continue outer:`/`break outer:`-labeled jumps out of/past a nested loop compile and execute as expected, including through a 2D grid scan pattern (verified). The IDE0410 style rule (flagging the flag-variable/`goto` workarounds these replace) is a Roslyn analyzer, not something to verify via `dotnet run` — trust the docs' description of it.
+Both are covered with working examples in `csharp-extension-members` and `csharp-language-versions` respectively — nothing to add beyond what's there except confirming both compile and run as documented in RC1: a `this[int]` inside an `extension(T receiver)` block routes indexing syntax through the extension, and `continue outer:`/`break outer:`-labeled jumps out of/past a nested loop compile and execute as expected, including through a 2D grid scan pattern. The IDE0410 style rule (flagging the flag-variable/`goto` workarounds these replace) is a Roslyn analyzer, not something to verify via `dotnet run` — trust the docs' description of it.
 
 ## Memory-safety pointer relaxations — preview only, don't ship it
 
-Requires `<LangVersion>preview</LangVersion>` **and** `AllowUnsafeBlocks=true`; this is a multi-release effort still in its first step in C# 15/RC1. Verified the split precisely: declaring a pointer and taking an address compiles *without* an `unsafe` context —
+Requires `<LangVersion>preview</LangVersion>` **and** `AllowUnsafeBlocks=true`; this is a multi-release effort still in its first step in C# 15/RC1. The split is precise: declaring a pointer and taking an address compiles *without* an `unsafe` context —
 
 ```csharp
 int number = 42;
 int* pointer = &number;      // compiles fine under LangVersion=preview, no `unsafe` needed
 ```
 
-— but dereferencing still requires one: `*pointer` under the same settings, outside `unsafe`, fails with `error CS9360: This operation may only be used in an unsafe context` (verified). So the relaxation is narrowly about *declaring/taking addresses/`fixed`/`sizeof`*, not about unmanaged memory access — indirection (`*p`, `p->m`, `p[i]`), function pointer invocation, and anything that actually reads/writes through a pointer is still gated. There's also `unsafe(expr)` (an unsafe *expression*, useful in field initializers/constructor initializers/catch filters where an `unsafe` block can't syntactically appear) and a `safe` contextual keyword for `extern` members/fields in explicit/extended layout types, tied to a separate `updated-memory-safety-rules` compiler feature flag that adds caller-side "requires-unsafe" propagation.
+— but dereferencing still requires one: `*pointer` under the same settings, outside `unsafe`, fails with `error CS9360: This operation may only be used in an unsafe context`. So the relaxation is narrowly about *declaring/taking addresses/`fixed`/`sizeof`*, not about unmanaged memory access — indirection (`*p`, `p->m`, `p[i]`), function pointer invocation, and anything that actually reads/writes through a pointer is still gated. There's also `unsafe(expr)` (an unsafe *expression*, useful in field initializers/constructor initializers/catch filters where an `unsafe` block can't syntactically appear) and a `safe` contextual keyword for `extern` members/fields in explicit/extended layout types, tied to a separate `updated-memory-safety-rules` compiler feature flag that adds caller-side "requires-unsafe" propagation.
 
 Per the general preview-features rule in `csharp-language-versions`: **never use `LangVersion=preview` constructs in product code.** These are for a throwaway file-based spike only, and the feature itself is explicitly unstable pending future C# releases.
 
@@ -221,10 +218,10 @@ Per the general preview-features rule in `csharp-language-versions`: **never use
 
 ## Availability
 
-`net11.0` defaults to `LangVersion` 15 — verified: a file-based app with no explicit TFM/LangVersion on the RC1 SDK reports `TargetFramework: net11.0, LangVersion: 15.0` via `dotnet build -getProperty:`.
+`net11.0` defaults to `LangVersion` 15: a file-based app with no explicit TFM/LangVersion on the RC1 SDK reports `TargetFramework: net11.0, LangVersion: 15.0` via `dotnet build -getProperty:`.
 
-- **`union` cannot be polyfilled onto an older TFM.** Verified: `net10.0` + explicit `LangVersion=15` fails a `union` declaration with `error CS0518: Predefined type 'System.Runtime.CompilerServices.IUnion' is not defined or imported` and `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.UnionAttribute..ctor'` — these are real runtime types shipped starting .NET 11 Preview 5, not synthesizable by the compiler the way `IsExternalInit` is for `init`. A union type is effectively `net11.0`+ only, full stop, even if you're willing to hand-write the attribute/interface yourself (the compiler explicitly declines to synthesize them per the speclet's resolved open question — and even if it compiled, consumers like `System.Text.Json`'s union support key off the real runtime contract, not a look-alike).
-- **`closed` hierarchies *can* be polyfilled** onto `net10.0`/earlier with an explicit `LangVersion=15` and a hand-written `IsClosedTypeAttribute` marker — verified above. Still requires bumping `LangVersion` past the TFM's implied default, which is an exception to the general "don't do that" rule in `csharp-language-versions` — only do it as a deliberate call, not casually.
+- **`union` cannot be polyfilled onto an older TFM.** `net10.0` + explicit `LangVersion=15` fails a `union` declaration with `error CS0518: Predefined type 'System.Runtime.CompilerServices.IUnion' is not defined or imported` and `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.UnionAttribute..ctor'` — these are real runtime types shipped starting .NET 11 Preview 5, not synthesizable by the compiler the way `IsExternalInit` is for `init`. A union type is effectively `net11.0`+ only, full stop, even if you're willing to hand-write the attribute/interface yourself (the compiler explicitly declines to synthesize them per the speclet's resolved open question — and even if it compiled, consumers like `System.Text.Json`'s union support key off the real runtime contract, not a look-alike).
+- **`closed` hierarchies *can* be polyfilled** onto `net10.0`/earlier with an explicit `LangVersion=15` and a hand-written `IsClosedTypeAttribute` marker, as shown above. Still requires bumping `LangVersion` past the TFM's implied default, which is an exception to the general "don't do that" rule in `csharp-language-versions` — only do it as a deliberate call, not casually.
 - Collection expression arguments, extension indexers, and labeled `break`/`continue` are pure compiler/IL features with no runtime-type dependency — they need `LangVersion` 15 but not specifically `net11.0`'s runtime, the same category as most C# 12–14 features per the polyfill table in `csharp-language-versions`.
 
 ## Checklist

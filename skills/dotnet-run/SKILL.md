@@ -61,9 +61,9 @@ Don't: dotnet run --input sample.txt          # if --input isn't a dotnet-run op
 
 ## Inline C# from stdin (`dotnet run -`)
 
-`dotnet run -` reads the whole program from standard input instead of a file — the `npx`/`python -` pattern, useful for CI steps that need a few dozen lines of real C# (typed args, `File`, `Process`) instead of fragile bash. Introduced in .NET SDK 10.0.100; present on both 10.0.401 and 11.0.100-rc.1 here. It runs through the same file-based-app machinery as `dotnet run app.cs` — see `dotnet-file-based-apps` for directives and caching mechanics.
+`dotnet run -` reads the whole program from standard input instead of a file — the `npx`/`python -` pattern, useful for CI steps that need a few dozen lines of real C# (typed args, `File`, `Process`) instead of fragile bash. Introduced in .NET SDK 10.0.100. It runs through the same file-based-app machinery as `dotnet run app.cs` — see `dotnet-file-based-apps` for directives and caching mechanics.
 
-**Heredoc** (preferred in scripts — keeps the program readable in place) and **pipe** both work, verified:
+**Heredoc** (preferred in scripts — keeps the program readable in place) and **pipe** both work:
 
 ```bash
 dotnet run - -- alpha beta <<'CS'
@@ -75,13 +75,13 @@ echo 'Console.WriteLine("hi");' | dotnet run -
 cat probe.cs | dotnet run -
 ```
 
-**Quote the heredoc marker — `<<'CS'`, not `<<CS`.** An unquoted marker lets the shell expand `$VAR` and `` `cmd` `` inside the C# *before* the compiler ever sees it — verified: `Console.WriteLine("$NAME");` in an unquoted heredoc came out with the shell's value of `$NAME` baked into the source (including inside a C# `$"..."` interpolated string, which made the shell eat the very `$` that C# also uses for interpolation). With `<<'CS'`, `$NAME` reaches the compiler literally; read real values with `Environment.GetEnvironmentVariable("NAME")` instead.
+**Quote the heredoc marker — `<<'CS'`, not `<<CS`.** An unquoted marker lets the shell expand `$VAR` and `` `cmd` `` inside the C# *before* the compiler ever sees it, including inside a C# `$"..."` interpolated string — the shell eats the `$` that C# also uses for interpolation. With `<<'CS'`, `$NAME` reaches the compiler literally; read real values with `Environment.GetEnvironmentVariable("NAME")` instead.
 
-**`cd` to a scratch directory first** (`$RUNNER_TEMP` in Actions, `mktemp -d` locally) before piping in the script, matching the two real workflows this pattern comes from. Verified what actually crosses the `cd`: **`global.json` SDK pinning is resolved from the caller's current directory** (pin a repo's SDK feed control and it took effect on the stdin build), but — unlike a `.cs` file run in place — **`Directory.Build.props`/`Directory.Packages.props`/`nuget.config` from the caller's directory did *not* apply** in testing, because `dotnet run -` materializes the piped source into its own cache directory under the runfile cache, not the caller's directory, and MSBuild's implicit-import walk starts there. Still `cd` out of the repo: it keeps the program's own relative file I/O (`File.ReadAllText("./x")`) predictable and away from a build tree, and it's the one habit that's correct across every environment, not just the one you tested.
+**`cd` to a scratch directory first** (`$RUNNER_TEMP` in Actions, `mktemp -d` locally) before piping in the script. What crosses the `cd`: **`global.json` SDK pinning is resolved from the caller's current directory**, but — unlike a `.cs` file run in place — **`Directory.Build.props`/`Directory.Packages.props`/`nuget.config` from the caller's directory do *not* apply**, because `dotnet run -` materializes the piped source into its own cache directory under the runfile cache, not the caller's directory, and MSBuild's implicit-import walk starts there. Still `cd` out of the repo: it keeps the program's own relative file I/O (`File.ReadAllText("./x")`) predictable and away from a build tree, and it's the one habit that's correct across every environment.
 
 **Treat CI inputs as untrusted; never splice them into the C# text.** Pass them as environment variables (`env: SUITE: ${{ inputs.suite }}`) or as `dotnet run - -- "$SUITE" "$FILTER"` app arguments, then read them with `args is [var suite, var filter]` or `Environment.GetEnvironmentVariable`. Interpolating `${{ inputs.x }}` directly into the heredoc body is a script-injection hole — the value becomes literal C# text before the compiler runs. Write step outputs with `File.AppendAllLines(Environment.GetEnvironmentVariable("GITHUB_OUTPUT")!, [...])`; the program's `return n;` becomes the step's exit code, same propagation as any other `dotnet run`.
 
-`#:package`/`#:property` directives at the top of the piped text work the same as in a file (`#:package Newtonsoft.Json@13.0.3` restored and ran cleanly, verified). Caching is the same content-hash mechanism as any file-based app, so a byte-identical rerun is fast — but each CI invocation typically differs (different args baked into env, or you tweak the script), so in practice you rarely get a cache hit, and there's no stable path for a later `--no-build` step to reuse. For a probe with real package dependencies, or anything you'll run more than a couple of times, save it as a checked-in `.cs` file instead of stdin — see `dotnet-file-based-apps`.
+`#:package`/`#:property` directives at the top of the piped text work the same as in a file. Caching is the same content-hash mechanism as any file-based app, so a byte-identical rerun is fast — but each CI invocation typically differs (different args baked into env, or you tweak the script), so in practice you rarely get a cache hit, and there's no stable path for a later `--no-build` step to reuse. For a probe with real package dependencies, or anything you'll run more than a couple of times, save it as a checked-in `.cs` file instead of stdin — see `dotnet-file-based-apps`.
 
 ```csharp
 using static System.Environment;
@@ -103,11 +103,11 @@ return 0;
 | `--no-cache` | Skip up-to-date checks and always rebuild (mainly meaningful for file-based apps; see `dotnet-file-based-apps`). |
 | `-lp\|--launch-profile <NAME>` | Select a named profile from launch settings (case-insensitive; ambiguous case-only differences error). |
 | `--no-launch-profile` | Ignore launch settings entirely. |
-| `-e\|--environment <K=V>` | Set an env var for the launched app only, not for `dotnet run` itself. Repeatable. Added in .NET SDK 9.0.200 — present on 10.0.401 and 11.0.100-rc.1, both verified here; not available on older 9.x SDKs before .200. |
+| `-e\|--environment <K=V>` | Set an env var for the launched app only, not for `dotnet run` itself. Repeatable. Added in .NET SDK 9.0.200; not available on older 9.x SDKs. |
 | `-v\|--verbosity <LEVEL>` | MSBuild verbosity for the build step. |
 | `-p\|--property:<K>=<V>` | MSBuild properties, e.g. `-p:Configuration=Release`. |
 | `--interactive` | Allow the build to pause for credential prompts etc. |
-| `--device` / `--list-devices` | Device targeting/listing for mobile-style workloads; present (and generally inert for ordinary console/library projects) on both 10.0.401 and 11.0.100-rc.1 SDKs. |
+| `--device` / `--list-devices` | Device targeting/listing for mobile-style workloads; generally inert for ordinary console/library projects. |
 
 ## launchSettings.json
 
@@ -135,19 +135,17 @@ Two `commandName` values apply to `dotnet run`:
 
 Other `commandName` values (e.g. IDE-specific ones) are silently skipped when `dotnet run` is auto-selecting a default profile, and error if selected explicitly by name.
 
-Verified behaviour:
+Behavior:
 
 - **Default profile**: the first profile in file order whose `commandName` is one `dotnet run` supports (`Project` or `Executable`). No name needed to use it.
 - **`environmentVariables`** land in the launched process; **explicit `commandLineArgs` on the CLI override the profile's**, but the profile's still apply when you don't pass any.
 - **`applicationUrl`** sets `ASPNETCORE_URLS` in the launched process (an explicit `ASPNETCORE_URLS` in `environmentVariables` or via `-e` wins over it).
 - `dotnet run` sets `DOTNET_LAUNCH_PROFILE` to the chosen profile's name in the child process.
 - Precedence, lowest to highest: ambient OS env → launch-profile `environmentVariables` → `-e`/`--environment`.
-- **`dotnet <app>.dll` ignores `launchSettings.json` entirely** — verified: none of the profile's env vars, args, or `DOTNET_LAUNCH_PROFILE` show up when launching the built DLL directly. Launch settings are a `dotnet run`/IDE-only concept.
+- **`dotnet <app>.dll` ignores `launchSettings.json` entirely** — none of the profile's env vars, args, or `DOTNET_LAUNCH_PROFILE` show up when launching the built DLL directly. Launch settings are a `dotnet run`/IDE-only concept.
 - File-based apps use a flat `[AppName].run.json` next to the source file instead of `Properties/launchSettings.json` — same profile schema. See `dotnet-file-based-apps`.
 
 ## Working directory and exit codes
-
-Verified:
 
 - The launched app's **working directory is the caller's current directory** (wherever you invoked `dotnet run` from), *not* the project directory — even when running via `--project ../other/dir`. Override with `RunWorkingDirectory` in the project, or `workingDirectory` in an `Executable`-type launch profile.
 - `dotnet run` **propagates the app's exit code** (returning `42` from `Main`/top-level code surfaces as `dotnet run`'s exit code).
@@ -162,7 +160,7 @@ Verified:
 
 ## Gotchas
 
-- **Directory.Build.props/targets, Directory.Packages.props, nuget.config, global.json are inherited from every parent directory** — verified for project-based runs too, not just file-based apps (`csharp-verification` and `dotnet-file-based-apps` cover the file-based case). A project nested under a repo picks up that repo's analyzers, warning levels, and central package versions.
+- **Directory.Build.props/targets, Directory.Packages.props, nuget.config, global.json are inherited from every parent directory** — this applies to project-based runs too, not just file-based apps (see `dotnet-file-based-apps` for the file-based case). A project nested under a repo picks up that repo's analyzers, warning levels, and central package versions.
 - **Microsoft.Testing.Platform (MTP) test projects are executables** (`OutputType=Exe`), so `dotnet run` on one *works* — it builds and runs the test binary directly, bypassing the `dotnet test`/VSTest orchestration layer (filtering, `--results-directory`, IDE test-explorer integration, etc.). Prefer `dotnet test` for anything beyond "does this compile and pass"; reach for `dotnet run` on a test project only for a quick single-run check. See `csharp-tunit`.
 - `DOTNET_ENVIRONMENT`/`ASPNETCORE_ENVIRONMENT` come from wherever you set them — ambient shell, or a launch profile's `environmentVariables` — `dotnet run` applies no default environment name of its own.
 - A multi-targeted project without `-f` doesn't silently pick one; don't assume CI scripts using bare `dotnet run` will keep working after adding a second `<TargetFrameworks>` entry.
