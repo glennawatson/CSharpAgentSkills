@@ -13,7 +13,6 @@
 // Dry run by default; add --write to apply.
 //   dotnet run 03-remove-redundant-call.cs -- /path/to/Your.slnx --write
 //
-// Adapted (as a template) from ControllerConverter/AsQueryableRemover.cs.
 
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;

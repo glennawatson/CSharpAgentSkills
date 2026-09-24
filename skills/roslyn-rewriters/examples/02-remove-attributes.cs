@@ -10,7 +10,6 @@
 // Dry run (default): prints what it WOULD change. Add --write to edit files.
 //   dotnet run 02-remove-attributes.cs -- /path/to/src --write
 //
-// Adapted (as a template) from ControllerConverter/AttributeRemover.cs.
 
 using System.Text;
 using Microsoft.CodeAnalysis;

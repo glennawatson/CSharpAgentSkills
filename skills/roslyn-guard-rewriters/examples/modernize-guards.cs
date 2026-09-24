@@ -1,4 +1,7 @@
 #!/usr/bin/dotnet run
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Matching and rewrite logic ported from dotnet/sdk (Microsoft.CodeAnalysis.NetAnalyzers).
 #:package Microsoft.CodeAnalysis.CSharp@5.0.0
 
 // Guard-modernization rewriter: hand-written `if (...) throw new SomeException(...);`
@@ -17,9 +20,9 @@
 // tree itself with a CSharpSyntaxRewriter, exactly like the real fixer's
 // `ApplyFix` does with a `SyntaxEditor` — same output shape, different host.
 //
-// Ported from (read, not guessed — see the citation above each matcher below):
-//   ~/source/dotnet/sdk/src/Microsoft.CodeAnalysis.NetAnalyzers/src/Microsoft.CodeAnalysis.NetAnalyzers/Microsoft.NetCore.Analyzers/Runtime/UseExceptionThrowHelpers.cs        (analyzer)
-//   ~/source/dotnet/sdk/src/Microsoft.CodeAnalysis.NetAnalyzers/src/Microsoft.CodeAnalysis.NetAnalyzers/Microsoft.NetCore.Analyzers/Runtime/UseExceptionThrowHelpersFixer.cs  (fixer)
+// Ported from dotnet/sdk (see the citation above each matcher below):
+//   src/Microsoft.CodeAnalysis.NetAnalyzers/src/Microsoft.CodeAnalysis.NetAnalyzers/Microsoft.NetCore.Analyzers/Runtime/UseExceptionThrowHelpers.cs        (analyzer)
+//   src/Microsoft.CodeAnalysis.NetAnalyzers/src/Microsoft.CodeAnalysis.NetAnalyzers/Microsoft.NetCore.Analyzers/Runtime/UseExceptionThrowHelpersFixer.cs  (fixer)
 //
 // See SKILL.md for the full per-rule table (matches -> produces), the deliberate
 // skips (and why), and the EXTENSIONS beyond the stock fixer (marked "EXTENSION"

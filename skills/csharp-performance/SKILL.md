@@ -5,7 +5,7 @@ description: Use when writing or reviewing C#/.NET code on a hot path where allo
 
 # C# performance toolkit
 
-These are the patterns the high-throughput .NET libraries in `~/source` actually use to stay fast. They trade a little complexity for fewer allocations, less GC pressure, and lock-free reads. **Apply them on measured hot paths, not by default** — on cold paths they just cost readability. Profile first (BenchmarkDotNet for micro, `dotnet-counters` for live GC/alloc/thread-pool, `dotnet-trace` for flow).
+These are the patterns high-throughput .NET libraries such as ReactiveUI, Splat, Akavache, Fusillade and Punchclock use to stay fast. They trade a little complexity for fewer allocations, less GC pressure, and lock-free reads. **Apply them on measured hot paths, not by default** — on cold paths they just cost readability. Profile first (BenchmarkDotNet for micro, `dotnet-counters` for live GC/alloc/thread-pool, `dotnet-trace` for flow).
 
 Companion helpers in `./helpers/` are drop-in implementations of the most reusable patterns — change the `PerfHelpers` namespace to suit your project.
 
@@ -62,14 +62,12 @@ Favour atomic reads over locks when reads vastly outnumber writes.
 - **Copy-on-write snapshot** — writers clone + publish a new immutable array under a lock; readers `Volatile.Read` the reference and enumerate with **no lock at all**. The workhorse pattern in Splat's resolver and ReactiveUI's registries. → `CopyOnWriteList<T>` helper.
 - **`Volatile.Read/Write`** for flags/counters/snapshot refs — memory-barrier visibility without mutual exclusion. *(Splat, Punchclock)*
 - **`Interlocked`** for counters and assign/dispose-once — `Increment/Decrement`, `Exchange`, and `CompareExchange(ref x, new, null)` to claim a one-time slot. → `AtomicDisposable` helper. *(Primitives `SinkSubscription`, Splat)*
-- **`ConcurrentDictionary.GetOrAdd` with a factory that captures nothing** — atomic check-and-insert. The `static` is not a style nicety: a capturing lambda allocates a display class per call and measured **1.60x slower than the `lock` it replaced** at one thread. Pass state through the `TArg` overload. Wrap the value in `Lazy<T>` if the factory must run *exactly* once under contention.
+- **`ConcurrentDictionary.GetOrAdd` with a factory that captures nothing** — atomic check-and-insert. A capturing lambda allocates a display class per call, which can make `GetOrAdd` slower than the `lock` it replaced; a non-capturing factory with state passed through the `TArg` overload avoids that (`static` guarantees it stays non-capturing). Wrap the value in `Lazy<T>` if the factory must run *exactly* once under contention.
 
-  | Read-heavy memo cache, 256 keys | 1 thread | 8 threads |
-  | --- | --- | --- |
-  | `lock` + `Dictionary` | 8.93 us | 266.08 us |
-  | `GetOrAdd`, **static** factory + state | **4.04 us (2.21x)** | **34.81 us (7.64x)** |
-  | `GetOrAdd`, capturing lambda | 14.25 us (**1.60x slower**) | 81.98 us (3.25x) |
-  | `Interlocked.CompareExchange` over an immutable snapshot | 8.41 us (unresolved) | 52.19 us (5.10x) |
+  For a read-heavy memo cache:
+  - `GetOrAdd` with a non-capturing factory is the fastest option, single-threaded and under contention, and its lead over `lock` + `Dictionary` grows with thread count.
+  - `GetOrAdd` with a capturing lambda is slower than `lock` + `Dictionary` on one thread, and loses most of its advantage under contention.
+  - `Interlocked.CompareExchange` over an immutable snapshot matches `lock` single-threaded and beats it under contention, but trails the non-capturing `GetOrAdd`.
 
 - **One-time initialisation: keep the gate, move it off the fast path.** Deleting the lock from a lazily built cache is the tempting "lock-free" rewrite and it is usually wrong — every concurrent first caller then runs the whole build and discards all but one result. But leaving the `lock` *in* the queried method blocks that method from inlining, so the warm path pays for a slow path it never takes. Split them: an inlinable `Volatile.Read` fast path, and the gate in its own `NoInlining` method.
 
@@ -94,11 +92,10 @@ Favour atomic reads over locks when reads vastly outnumber writes.
   }
   ```
 
-  | Expensive builder | Cold, 8 threads | Warm, 1 thread | Builder runs at 8 threads |
-  | --- | --- | --- | --- |
-  | No synchronisation | 25,392 us | 3,842 us | **8** |
-  | `lock` inside the queried method | 3,951 us | 3,435 us | 1 |
-  | **Split slow path** | **4,067 us** | **1,266 us (3.03x)** | **1** |
+  For an expensive builder:
+  - No synchronisation runs the builder once per concurrent first caller, so the cold path is several times slower than either gated version.
+  - A `lock` inside the queried method builds once, but the warm path stays slow because the method can't inline.
+  - The split slow path builds once, matches the `lock` version cold, and makes the warm path several times faster.
 
   Where the cached value is *cheap* (a couple of metadata lookups), a race is harmless — use `Interlocked.CompareExchange` over one immutable record holding every resolved value. Never publish the fields one at a time.
 

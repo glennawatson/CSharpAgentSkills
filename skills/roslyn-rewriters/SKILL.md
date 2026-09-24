@@ -5,7 +5,7 @@ description: Use for predictable, structural, repo-wide C# code changes — remo
 
 # Throwaway Roslyn rewriters for structural C# changes
 
-For a mechanical change that's the *same shape* across many files — strip a set of attributes, swap one API for another, rename a pattern, reshape method signatures — a regex or a Python script is guessing at C# syntax and will mangle edge cases (nested generics, trivia, string literals, conditional compilation). **A small Roslyn program parses the actual syntax tree and edits it structurally**, so the change is correct and the formatting/trivia survives. This is what `~/source/ControllerConverter` does, and it's the reliable way to do predictable bulk edits.
+For a mechanical change that's the *same shape* across many files — strip a set of attributes, swap one API for another, rename a pattern, reshape method signatures — a regex or a Python script is guessing at C# syntax and will mangle edge cases (nested generics, trivia, string literals, conditional compilation). **A small Roslyn program parses the actual syntax tree and edits it structurally**, so the change is correct and the formatting/trivia survives. It's the reliable way to do predictable bulk edits.
 
 Reach for this when: the change is **structural and repeatable**, affects **many files**, and a wrong text-match would silently corrupt code. For one-off edits or genuinely judgment-heavy changes, just edit directly (or drive subagents — see `subagent-driven-development`).
 
@@ -61,7 +61,7 @@ Two habits baked into the examples worth keeping: **dry-run by default** (print 
 
 ## When you need semantics: load the workspace
 
-Syntax-only parsing (above) is enough for most attribute/signature/call-shape edits and is far simpler. Step up to a full workspace **only when the change needs the semantic model** — resolving what a symbol actually binds to, types, overloads, "is this the `System.Text.Json` one or ours." That's the `ControllerConverter` approach:
+Syntax-only parsing (above) is enough for most attribute/signature/call-shape edits and is far simpler. Step up to a full workspace **only when the change needs the semantic model** — resolving what a symbol actually binds to, types, overloads, "is this the `System.Text.Json` one or ours." Load the solution through `MSBuildWorkspace`:
 
 ```csharp
 MSBuildLocator.RegisterDefaults();                    // before any Roslyn MSBuild call
@@ -91,7 +91,7 @@ Needs `Microsoft.Build.Locator` + `Microsoft.CodeAnalysis.Workspaces.MSBuild` (+
 - **Edit the tree, not the text.** Use `ReplaceNode`/`ReplaceNodes`, `WithAttributeLists`, `SyntaxFactory`, or a `CSharpSyntaxRewriter`. Nodes are immutable — every "change" returns a new node; reassign.
 - **Preserve trivia.** Whitespace, comments, and newlines are *trivia* attached to tokens. When you remove or replace a node, carry the leading/trailing trivia across (as `AttributeRemover` does) so you don't leave dangling blank lines or eat comments.
 - **Bail when nothing changed.** `if (newRoot == root) continue;` — don't rewrite (and reformat/touch) files the transform didn't actually affect.
-- **Normalize output deliberately.** Decide on line endings and trailing whitespace and apply consistently (ControllerConverter normalizes to `\n` and trims line ends, writes UTF-8 no-BOM). Or run `dotnet format` afterward instead of hand-normalizing.
+- **Normalize output deliberately.** Decide on line endings and trailing whitespace and apply consistently (for example normalize to `\n`, trim line ends, and write UTF-8 without a BOM). Or run `dotnet format` afterward instead of hand-normalizing.
 
 ## After running it
 

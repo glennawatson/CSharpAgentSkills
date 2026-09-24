@@ -45,7 +45,7 @@ never emit a short name that could silently bind to the wrong thing.
 ## Per-rule tables
 
 Every matcher below cites the exact source file + method it was ported from
-(`~/source/dotnet/sdk/src/Microsoft.CodeAnalysis.NetAnalyzers/...`) — read the citation
+(the dotnet/sdk repository, `src/Microsoft.CodeAnalysis.NetAnalyzers/...`) — read the citation
 comment above each matcher in the `.cs` files, not just this table, before trusting or
 extending it.
 

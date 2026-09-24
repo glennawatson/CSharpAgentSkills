@@ -1,4 +1,7 @@
 #!/usr/bin/dotnet run
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Parameter-validation rules ported from dotnet/sdk (Microsoft.CodeAnalysis.NetAnalyzers, CA1062/CA1510).
 #:package Microsoft.CodeAnalysis.CSharp@5.0.0
 
 // Nullable-migration rewriter: CA1062-shaped null guards at public boundaries.

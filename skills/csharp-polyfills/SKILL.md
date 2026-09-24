@@ -19,15 +19,12 @@ separate question, decided per feature. This skill is the detailed authority on 
 | **Needs a polyfilled type** | A specific type/attribute the compiler binds to *by full name* — doesn't have to be the real BCL one | `init` (`IsExternalInit`), `required` (`RequiredMemberAttribute`/`CompilerFeatureRequiredAttribute`/`SetsRequiredMembersAttribute`), `[CallerArgumentExpression]`, nullable flow attributes (`NotNullWhen`, `MemberNotNull`, `DoesNotReturn`, ...), `Index`/`Range` (`^`, `..`), `ModuleInitializerAttribute`, `SkipLocalsInitAttribute`, `InterpolatedStringHandlerAttribute`, `UnscopedRefAttribute`, `OverloadResolutionPriorityAttribute` | Yes, if you supply the type |
 | **Needs runtime support** | A real capability the CLR/metadata format of the old runtime doesn't have — no type can fake it | default interface members, static abstract interface members, `ref struct` generics/`allows ref struct`, runtime async, union types (`IUnion`/`UnionAttribute`) | No, not ever, regardless of `LangVersion` |
 
-Verified empirically in `/tmp/polyfill-verify/PolyfillDemo` (netstandard2.0 + net472,
-`LangVersion latest`): a project with hand-written `IsExternalInit`, `RequiredMemberAttribute`,
-`CompilerFeatureRequiredAttribute`, `CallerArgumentExpressionAttribute`, `SetsRequiredMembersAttribute`,
-`NotNullWhenAttribute`, and a polyfilled `System.Index` compiles `record`, `required` members,
-`[CallerArgumentExpression]` guards, `[NotNullWhen]`, and `^1` indexing cleanly on both TFMs. Adding
-a default interface member or a `static abstract` interface member to the same project fails on
-`netstandard2.0` with `CS8701` ("Target runtime doesn't support default interface implementation")
-and `CS8919` ("Target runtime doesn't support static abstract members in interfaces") — tier 3,
-no polyfill possible.
+With `LangVersion latest` on `netstandard2.0`/`net472` and those polyfills in place, `record`,
+`required` members, `[CallerArgumentExpression]` guards, `[NotNullWhen]` and `^1` indexing all
+compile. Tier 3 features fail on those targets whatever the `LangVersion`: a default interface
+member gives `CS8701` ("Target runtime doesn't support default interface implementation") and a
+`static abstract` interface member gives `CS8919` ("Target runtime doesn't support static abstract
+members in interfaces").
 
 Check the *default* `LangVersion` the SDK picks per TFM directly:
 

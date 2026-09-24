@@ -76,18 +76,13 @@ Use BenchmarkDotNet's EventPipe diagnoser rather than an ad-hoc byte counter
 public class FooProfiledAllocBenchmarks { ... }
 ```
 
-That writes `.nettrace` and `.speedscope.json` beside the other artifacts. Analyse them with the
-tools in `~/source/rxui/tools`:
+That writes `.nettrace` and `.speedscope.json` beside the other artifacts. Analyse them with a
+small single-file app over `Microsoft.Diagnostics.Tracing.TraceEvent` (see `dotnet-file-based-apps`)
+that ranks allocation types, allocation sites and inclusive frames from the `.nettrace`, and filters
+the `.speedscope.json` down to your own frames with the framework noise removed. The speedscope
+file also opens directly in speedscope.app.
 
-```bash
-# Ranked allocation types, sites and inclusive frames
-dotnet run ~/source/rxui/tools/nettrace-analyzer.cs -- --top 15 <trace>.nettrace
-
-# Just your own frames, with the framework noise filtered out
-dotnet run --project ~/source/rxui/tools/TraceFocus -- --file <trace>.speedscope.json --analyzer-only
-```
-
-`TraceFocus` reports the focused share — the fraction of sampled time inside your code. That number
+Report the focused share: the fraction of sampled time inside your code. That number
 tells you whether optimising your code can matter at all before you spend time on it. A leaf-time of
 near zero under a frame with large inclusive time means the cost is in what it *calls*, not in it.
 

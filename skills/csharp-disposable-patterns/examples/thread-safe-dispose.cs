@@ -1,4 +1,7 @@
 #!/usr/bin/dotnet run
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Owned-field report rules ported from dotnet/sdk (Microsoft.CodeAnalysis.NetAnalyzers, CA1001/CA2213).
 #:package Microsoft.CodeAnalysis.CSharp@5.0.0
 
 // Syntax-only rewrite (no MSBuildWorkspace needed — every check below is name-based

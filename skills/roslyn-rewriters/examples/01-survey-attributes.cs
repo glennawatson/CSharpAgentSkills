@@ -8,7 +8,6 @@
 //
 // Run:  dotnet run 01-survey-attributes.cs -- /path/to/src
 //
-// Adapted (as a template) from ControllerConverter/GetAttributeNames.cs.
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

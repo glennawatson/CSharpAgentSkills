@@ -186,8 +186,8 @@ IOrdersApi api = RestService.ForGenerated<IOrdersApi>(client, OrdersJson.Default
 - A Refit interface method can take a `JsonTypeInfo<T>` parameter (matched by `T` against the body
   or reply type) so a client built without a context still gets per-call generated metadata; Refit's
   generator enforces this at build time (`RF014` if the parameter can't be matched).
-- See `~/source/rxui/website/docs/documentation/refit/serialization/json.md` and
-  `.../refit/aot.md` for the full walkthrough this section summarizes.
+- Refit's own documentation (Serialization > JSON, and AOT) on the ReactiveUI website has the full
+  walkthrough.
 
 ## Polymorphism, enums, records
 
