@@ -13,11 +13,14 @@ The skills target .NET 10 and C# 14 by default, with clearly marked sections for
 | Skill | What it covers |
 | --- | --- |
 | [csharp-language-versions](skills/csharp-language-versions) | Working out the effective C# version per target framework, the feature-by-version table, polyfills for older targets, and keeping preview features out of product code. |
+| [csharp-polyfills](skills/csharp-polyfills) | Why `LangVersion` is independent of the target framework, which modern features work on older targets as-is, which need a polyfilled type, which are impossible, and how to write and wire polyfills. |
 | [csharp-15-syntax](skills/csharp-15-syntax) | C# 15 in depth: union types (and their boxing of value-type cases), `closed` hierarchies, collection expression arguments, extension indexers, labeled `break`/`continue`. |
 | [csharp-pattern-matching](skills/csharp-pattern-matching) | Switch expressions, property/relational/list patterns, real exhaustiveness, and when a pattern stops being readable. |
 | [csharp-modern-types](skills/csharp-modern-types) | Choosing between class, record, record struct and readonly struct; primary constructor pitfalls; `required`, `init`, `with` and the `field` keyword. |
 | [csharp-nullability](skills/csharp-nullability) | Writing nullable-enabled code properly: flow attributes, boundary guards, when `!` is acceptable, and `Try*` signatures. |
 | [csharp-nullable-migration](skills/csharp-nullable-migration) | Turning nullable reference types on in an existing codebase: rollout order, safe Roslyn rewriters for the mechanical part, and per-site triage for the rest. |
+| [csharp-static-lambdas](skills/csharp-static-lambdas) | What `static` on a lambda or local function really does: a compile-time guarantee of no captured state, not an optimisation in itself, plus the state-passing pattern and expression-tree caveats. |
+| [csharp-discards](skills/csharp-discards) | Using `_` to say a value is deliberately unused: return values, `out _`, deconstruction, patterns and lambda parameters, when not to discard, and expression-tree limits. |
 | [csharp-extension-members](skills/csharp-extension-members) | C# 14 `extension` blocks: extension properties, static members, operators and indexers. |
 | [csharp-generics-modern](skills/csharp-generics-modern) | Generic math, static abstract members, `allows ref struct`, constraints, and avoiding boxing with constrained generics. |
 | [csharp-collections-modern](skills/csharp-collections-modern) | Collection expressions, `params` spans, choosing a collection type, read-only APIs, `CollectionsMarshal`, and LINQ on hot paths. |
@@ -28,9 +31,11 @@ The skills target .NET 10 and C# 14 by default, with clearly marked sections for
 | Skill | What it covers |
 | --- | --- |
 | [csharp-api-design](skills/csharp-api-design) | Public surface rules, `Try*` versus exceptions, binary versus source breaking changes, API tracking, and domain naming. |
+| [csharp-guard-clauses](skills/csharp-guard-clauses) | Null and value guards with the .NET 8+ `ThrowIf*` helpers (`ThrowIfNull`, `ThrowIfNegative`, `ThrowIfGreaterThan` and the rest), where guards belong, the analyzer rules and fixers, and polyfills for older targets. |
 | [csharp-error-handling](skills/csharp-error-handling) | What to catch and where, exception filters, rethrowing correctly, guard helpers, and throw helpers for hot paths. |
 | [csharp-async](skills/csharp-async) | async/await correctness and performance: deadlocks, contexts, `ValueTask`, `ConfigureAwait`, and elision. |
 | [dotnet-runtime-async](skills/dotnet-runtime-async) | .NET 11 runtime async (no compiler state machine): how to enable and detect it, what changes, and the Mono/WebAssembly warning for apps and libraries. |
+| [csharp-disposable-patterns](skills/csharp-disposable-patterns) | Thread-safe `IDisposable`/`IAsyncDisposable`: idempotent `Interlocked` disposal, replaceable and composite disposables, disposal exceptions and ownership, with a rewriter for the classic `bool _disposed` pattern. |
 | [csharp-concurrency-primitives](skills/csharp-concurrency-primitives) | `Lock`, `SemaphoreSlim`, `Interlocked`, channels, `ConcurrentDictionary` pitfalls, and lazy initialisation. |
 | [csharp-docs](skills/csharp-docs) | Concise XML documentation and comments that describe current behaviour, not history. |
 | [csharp-debugging](skills/csharp-debugging) | Hypothesis-driven diagnosis of bugs, exceptions and failing CI runs. |
@@ -61,6 +66,7 @@ The skills target .NET 10 and C# 14 by default, with clearly marked sections for
 | --- | --- |
 | [roslyn-discovery](skills/roslyn-discovery) | Read-only Roslyn programs that answer structural questions: API surface, implementers, usages. |
 | [roslyn-rewriters](skills/roslyn-rewriters) | Safe, structure-aware repo-wide edits with Roslyn rewriters instead of find-and-replace. |
+| [roslyn-guard-rewriters](skills/roslyn-guard-rewriters) | Standalone rewriters ported from the CA1062 and CA1510–CA1513 analyzer and fixer source: add missing null guards at public boundaries and convert hand-written guards to `ThrowIf*` helpers, with a polyfill mode for older targets. |
 | [roslyn-duplicate-detection](skills/roslyn-duplicate-detection) | Measuring duplication and finding shared-helper candidates locally. |
 | [csharp-lsp](skills/csharp-lsp) | Using language-server data without trusting stale diagnostics over `dotnet build`. |
 | [csharp-assembly-inspection](skills/csharp-assembly-inspection) | Questions about the built artifact: shipped types, resources, references and package contents. |
