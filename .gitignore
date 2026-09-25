@@ -35,3 +35,6 @@ Thumbs.db
 # Logs and scratch
 *.log
 scratch/
+
+# Claude Code local workspace
+.claude/
