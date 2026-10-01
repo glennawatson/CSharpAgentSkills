@@ -169,6 +169,7 @@ and upload the full JSON/HTML/CSV as an artifact.
 
 - Don't struct-ify a type, pool mutable state, or hoist work into `[GlobalSetup]` to move a number.
   That games the harness, not the program.
-- Don't triage candidates by gut before measuring. The biggest wins hide in the pile you would have
-  skipped as low-reward or too risky.
+- Don't claim code is fast, slow, "already optimal" or "the hot path" from reading it. Measure.
+- Don't triage candidates by gut before measuring. Benchmark every candidate. The biggest wins hide
+  in the pile you would have skipped as low-reward or too risky.
 - Don't report a mean without its error.

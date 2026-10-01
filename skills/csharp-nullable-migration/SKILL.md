@@ -37,10 +37,24 @@ Per-file `#nullable enable` (a directive, not an MSBuild property) is the finer-
 
 Count `CS86xx` (and the `CS8765`/`CS8767` override-mismatch family) per project from a `dotnet build` log rather than eyeballing the IDE's warning count, which only reflects whatever's currently open:
 
+Capture the log to a file, then count it with a single-file app run from outside the repo (see `dotnet-file-based-apps`):
+
 ```sh
-dotnet build MySolution.slnx /p:Nullable=enable -warnaserror- 2>&1 \
-  | grep -oE 'warning CS8[0-9]{3}' \
-  | sort | uniq -c | sort -rn
+dotnet build MySolution.slnx /p:Nullable=enable -warnaserror- > /tmp/build.log 2>&1
+
+mkdir -p /tmp/nullable-count && cd /tmp/nullable-count && dotnet run - <<'CS'
+using System.Text.RegularExpressions;
+
+var counts = File.ReadLines("/tmp/build.log")
+    .SelectMany(line => Regex.Matches(line, @"warning (CS8\d{3})").Select(m => m.Groups[1].Value))
+    .CountBy(id => id)
+    .OrderByDescending(pair => pair.Value);
+
+foreach (var (id, count) in counts)
+{
+    Console.WriteLine($"{count,6} {id}");
+}
+CS
 ```
 
 For a per-project or per-file breakdown (which is what you actually need to plan the next slice of work), parse the build log structurally instead of scraping text — the `roslyn-discovery` conventions apply: a throwaway `dotnet build -bl` binlog read with the `Microsoft.Build.Logging.StructuredLogger`, or simpler, `dotnet build /flp:logfile=build.log;warningsonly` and group the `warning CSxxxx in <file>` lines by file/project. Re-run after each pass and watch the count trend to zero for the project in flight — a stalled or rising count on a project you already "finished" means something regressed.

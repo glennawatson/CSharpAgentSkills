@@ -44,7 +44,8 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 - Use `-` bullets. One change or reason per bullet.
 - Simple sentences. One subject per sentence. Max 2–3 short sentences per bullet — usually one is enough.
-- Say **why** when it isn't obvious from the diff. Skip restating the obvious.
+- Say **why** when it isn't obvious from the diff, as its own plain sentence. No "because" or "so that" clauses, no parenthetical asides. Skip restating the obvious.
+- Describe the state the commit leaves. No history words: "now", "previously", "used to", "old code", "no longer".
 - Omit the body entirely for trivial commits — the subject is enough.
 
 ## Breaking changes
@@ -73,7 +74,7 @@ Good:
 fix(auth): reject expired refresh tokens
 
 - Return 401 when a refresh token is past its TTL.
-- The old code compared against issue time, so stale tokens still refreshed.
+- Measure expiry from the TTL, not the issue time. A stale token must not refresh.
 ```
 
 ```

@@ -17,7 +17,7 @@ The LSP/IDE language server is a *cached index*. It's fast and great for moving 
 
 Lean on it for navigation and mechanical edits where a stale answer is cheap to notice:
 
-- **Go-to-definition / find-references** to navigate and understand structure. Treat the reference list as "very likely complete," not "provably complete" — confirm with a text search (`grep`/`Grep`) for anything load-bearing, like before deleting a member.
+- **Go-to-definition / find-references** to navigate and understand structure. Treat the reference list as "very likely complete," not "provably complete" — confirm with a text search for anything load-bearing, like before deleting a member.
 - **Rename** of a symbol — the language server's rename is syntax-aware and usually correct across the solution. Still build afterward.
 - **Trivia / formatting / signature help** — whitespace, usings organization, hover for a type's shape. Low-stakes, fast.
 - **Quick "where is this" orientation** before you dig in with real tools.

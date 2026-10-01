@@ -100,7 +100,19 @@ dotnet sln MyRepo.sln migrate   # convert a legacy .sln, then delete the .sln
 - `AnalysisLevel` picks the analyzer rule *vintage* (`latest` tracks the SDK you're on); `AnalysisMode` picks the *default severity bucket* (`Minimum`, `Recommended`, `All`) for rules that don't have an explicit `.editorconfig` entry.
 - `EnforceCodeStyleInBuild` makes `.editorconfig` style rules (IDE0xxx) fail the build, not just show up as IDE squiggles — without it, style rules are cosmetic and silently rot.
 - `TreatWarningsAsErrors` plus the two settings above is what turns "the analyzers said something" into "the build won't produce a broken artifact." See `csharp-verification` for why a warning-emitting build is not a done build.
-- Don't add a repo-wide `<NoWarn>` list to make a warning go away; suppress the specific rule at the specific `.editorconfig` scope (or a targeted `#pragma` with a comment) instead.
+- Don't add a repo-wide `<NoWarn>` list to make a warning go away. See "Suppressions are a last resort" below.
+
+## Suppressions are a last resort
+
+A warning is a finding about the code. Fix the code first. Most analyzer warnings point at a real bug, and the fix is usually small.
+
+- **Never suppress in the first instance.** Read the warning, find what the code does wrong, and fix it.
+- **Never suppress because the fix is hard or tedious.** Giving up and suppressing is not done. Keep working the fix.
+- **Never suppress to make a build or gate pass.** A suppression is not a way to finish a task.
+- **Suppress only when you have tried the fix and the warning is wrong for this code.** Examples: a confirmed false positive, a public API shape you cannot change, interop with a signature you do not own.
+- **Use the narrowest scope.** Put `[SuppressMessage("Category", "ID", Justification = "...")]` on the one member. Never a file-wide or project-wide suppression for a local problem.
+- **Write the real reason in `Justification`.** Say why the warning is wrong here. "Not needed" or "false positive" with no detail is not a reason.
+- **Report every suppression you add to the user.** Name the rule, the member and the reason.
 
 ## .editorconfig
 
@@ -113,7 +125,7 @@ dotnet_diagnostic.IDE0060.severity = suggestion
 ```
 
 - `.editorconfig` is where per-rule severity actually lives; `AnalysisMode` is only the fallback for rules the file doesn't mention.
-- Lowering a rule's severity to make a build pass is a suppression, same as `#pragma warning disable` — it needs the same justification, not a reflex edit. See `csharp-verification`.
+- Lowering a rule's severity to make a build pass is a suppression, same as `#pragma warning disable`. It follows the same last-resort rules above. See `csharp-verification`.
 - **A long, deliberately organized `.editorconfig` is not append-only.** Sort a new line into the section it belongs to, not onto the end of the file:
   - **Find the right `[glob]` section first.** A file with sections at both the root and narrow, later scopes (e.g. a trailing `[**/tests/**/*.cs]`) can silently rescope a rule to tests if you anchor on "the last line that looks similar" instead of checking which `[...]` block your target line actually sits inside.
   - **Then the right comment-header group** (e.g. `# Maintainability`, `# Naming`) and insert in the same order the file already uses. Options belong in the options block, not mixed in among `dotnet_diagnostic.*` severity lines.
@@ -168,6 +180,7 @@ Before changing any of the above, check what the repo already does — the whole
 - [ ] `Nullable`, `ImplicitUsings` enabled; `LangVersion` explicit only when pinning below the TFM default
 - [ ] `TreatWarningsAsErrors` + `EnforceCodeStyleInBuild` + `AnalysisLevel latest` — warnings and style rules actually fail the build
 - [ ] Rule severities live in `.editorconfig`, not ad hoc `#pragma`/`NoWarn`
+- [ ] Every warning was fixed in the code; any suppression is member-scoped, has a real `Justification`, and was reported
 - [ ] `ContinuousIntegrationBuild` set for CI/package-producing builds; SourceLink wired for published packages
 - [ ] `NuGetAudit` left on; lock files added only when the repo genuinely needs reproducible restores
 - [ ] Changes match the repo's existing conventions instead of introducing a parallel one

@@ -42,7 +42,7 @@ Copy one and adapt the query. They're disposable — don't commit them into the 
 
 ## When NOT to reach for this
 
-- A genuinely simple, literal-text question (`grep` for a constant string) — just grep.
+- A genuinely simple, literal-text question (find a constant string) — just use a text search.
 - A one-off "where's this method" navigation — LSP go-to-definition is fine for that (and `csharp-lsp` covers when to trust it).
 - Reach for Roslyn when the question is **structural or semantic** and a wrong/incomplete answer would matter — completeness-critical sweeps, refactor work-lists, API audits.
 

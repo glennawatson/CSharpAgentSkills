@@ -19,7 +19,7 @@ Never say a change is complete on the strength of "it should work." Completion i
 2. **The analyzers are satisfied — this is the part people skip.**
    - Roslyn analyzers encode the project's actual rules: the .NET SDK analyzers, `Microsoft.CodeAnalysis.NetAnalyzers`, StyleCop, `Roslynator`, any first-party analyzers in the repo, and the severities set in `.editorconfig` / `Directory.Build.props`.
    - A build that is green **but emits analyzer warnings is not done.** Read each warning and fix the underlying cause.
-   - **Do not silence to pass.** No reflexive `#pragma warning disable`, no `[SuppressMessage]`, no dropping a rule's severity in `.editorconfig` just to get a clean run. A suppression is a deliberate, justified decision (with a comment saying *why*) — not a way to make the gate shut up.
+   - **Do not silence to pass.** No reflexive `#pragma warning disable`, no `[SuppressMessage]`, no dropping a rule's severity in `.editorconfig` just to get a clean run. Fix the code first. A suppression is a last resort, only after the fix was tried and the warning is wrong for this code — see "Suppressions are a last resort" in `dotnet-project-hygiene`.
    - Run analysis the way CI does: `dotnet build` surfaces them; `dotnet format analyzers --verify-no-changes` and `dotnet format style --verify-no-changes` catch formatting/style drift the build may not fail on.
    - If you genuinely believe an analyzer rule is wrong for this codebase, raise it with the user — don't unilaterally suppress.
 
@@ -34,18 +34,17 @@ Never say a change is complete on the strength of "it should work." Completion i
    - If the bug is "this DLL/package still carries X" or "MakePri/resources are wrong", verify against the built artifact, not your mental model of the source.
    - Use `csharp-assembly-inspection` to check manifest resources, assembly references, and runtime-visible surface, plus the actual package/output file layout.
 
-6. **Read coverage as a union, and judge the change by patch coverage.**
+6. **Read coverage as a union, across every file the change touched.**
    - A repo that links shared source into several projects (`<Compile Include="..\Shared\Foo.cs"/>`) reports that file at 0% in every package whose tests do not touch it. A single project's report is not the number; merge every report and count a line covered if **any** run covered it.
-   - Whole-file coverage of the files a change touched charges pre-existing gaps against the change. The honest number is **patch coverage** — of the executable lines this diff *adds*, how many are covered. Parse the unified diff for added line numbers and intersect with the merged report.
-   - Compare patch coverage against the repo's existing union rate. Equal means the change held the line; below means it lowered the bar. Say which.
-   - If the stated gate is 100% and the measured union is not, the gap is pre-existing — name it, don't imply the change caused it, and don't claim the gate passed.
+   - Judge each touched file by its whole-file union coverage, not only the lines the diff adds.
+   - If the union is below 100%, the gap is yours to close. Cover it, and don't claim the gate passed until it is closed.
 
 ## Coverage
 
 - **Whole-file target is 100%.** Cover with real tests, not by weakening the bar.
 - **Prefer `internal` + `InternalsVisibleTo` over `public` to make code reachable from tests.** Widen visibility only for a test assembly, never as a general-purpose way to expose internals to other shipping code (see `csharp-api-design`).
 - **`[ExcludeFromCodeCoverage]` is a last resort, and only on a minimal extracted helper**, not a whole method or class of real logic — reserve it for genuinely untestable code: cross-thread races, sync-over-async bridges, unreachable defensive branches, async-iterator dispose epilogues. Extract just that fragment into its own small helper and exclude the helper, so the exclusion's blast radius is visible and minimal.
-- **Reproduce a coverage gap as the union across every test project and every TFM the CI report covers**, not one project or one framework run locally — see the patch-coverage bullet above for why a single-project number misreports which lines are actually covered.
+- **Reproduce a coverage gap as the union across every test project and every TFM the CI report covers**, not one project or one framework run locally — see the union bullet above for why a single-project number misreports which lines are actually covered.
 
 ## Broken build
 
@@ -67,7 +66,7 @@ On the Microsoft.Testing.Platform-based `dotnet test` (opt in via `global.json`'
 ## Report honestly
 
 - State **what you ran** and the **actual result**: "`dotnet build` clean, 0 warnings; `dotnet test` 214 passed; analyzers clean via `dotnet format --verify-no-changes`." Specifics, not "everything passes."
-- If something failed, is flaky, or you skipped it — **say so**. A surfaced problem is worth more than a false "done."
+- If something failed or you skipped it — **say so**. A surfaced problem is worth more than a false "done."
 - Don't claim a category you didn't check. If you didn't run the app, don't imply you did.
 
 ## Anti-patterns
