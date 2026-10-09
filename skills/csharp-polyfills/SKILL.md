@@ -16,8 +16,8 @@ separate question, decided per feature. This skill is the detailed authority on 
 | Tier | What it needs | Examples | Works on `netstandard2.0`/`net4x` with `LangVersion latest`? |
 | --- | --- | --- | --- |
 | **Pure compiler lowering** | Nothing beyond IL the old runtime already understands | pattern matching, switch expressions, file-scoped namespaces, target-typed `new`, raw string literals, collection expressions targeting `T[]`/`List<T>`, primary constructors, `field` keyword, `using` alias for tuples | Yes, unconditionally |
-| **Needs a polyfilled type** | A specific type/attribute the compiler binds to *by full name* — doesn't have to be the real BCL one | `init` (`IsExternalInit`), `required` (`RequiredMemberAttribute`/`CompilerFeatureRequiredAttribute`/`SetsRequiredMembersAttribute`), `[CallerArgumentExpression]`, nullable flow attributes (`NotNullWhen`, `MemberNotNull`, `DoesNotReturn`, ...), `Index`/`Range` (`^`, `..`), `ModuleInitializerAttribute`, `SkipLocalsInitAttribute`, `InterpolatedStringHandlerAttribute`, `UnscopedRefAttribute`, `OverloadResolutionPriorityAttribute` | Yes, if you supply the type |
-| **Needs runtime support** | A real capability the CLR/metadata format of the old runtime doesn't have — no type can fake it | default interface members, static abstract interface members, `ref struct` generics/`allows ref struct`, runtime async, union types (`IUnion`/`UnionAttribute`) | No, not ever, regardless of `LangVersion` |
+| **Needs a polyfilled type** | A specific type/attribute the compiler binds to *by full name* — doesn't have to be the real BCL one | `init` (`IsExternalInit`), `required` (`RequiredMemberAttribute`/`CompilerFeatureRequiredAttribute`/`SetsRequiredMembersAttribute`), `[CallerArgumentExpression]`, nullable flow attributes (`NotNullWhen`, `MemberNotNull`, `DoesNotReturn`, ...), `Index`/`Range` (`^`, `..`), `ModuleInitializerAttribute`, `SkipLocalsInitAttribute`, `InterpolatedStringHandlerAttribute`, `UnscopedRefAttribute`, `OverloadResolutionPriorityAttribute`, C# 15 `union` (`UnionAttribute` + `IUnion`, see below), C# 15 `closed` (`IsClosedTypeAttribute`) | Yes, if you supply the type |
+| **Needs runtime support** | A real capability the CLR/metadata format of the old runtime doesn't have — no type can fake it | default interface members, static abstract interface members, `ref struct` generics/`allows ref struct`, runtime async | No, not ever, regardless of `LangVersion` |
 
 With `LangVersion latest` on `netstandard2.0`/`net472` and those polyfills in place, `record`,
 `required` members, `[CallerArgumentExpression]` guards, `[NotNullWhen]` and `^1` indexing all
@@ -110,6 +110,30 @@ Points worth copying:
   need the same polyfill, either put it in the one assembly the other doesn't need `InternalsVisibleTo`
   for, or accept `CS0436` isn't fatal (the compiler picks the type declared in the current
   compilation) but keep it in mind before wiring IVT for something else.
+
+### Example: C# 15 `union` on `net10.0`
+
+`union` looked like tier 3 but is tier 2. The compiler needs two types by name, and `net10.0` lacks
+them. Declare them `internal` where the real ones are missing. Verified on SDK `11.0.100-rc.1` with
+`net10.0;net11.0` and `LangVersion=latest` (C# 15; `net10.0` defaults to 14):
+
+```csharp
+#if !NET11_0_OR_GREATER
+namespace System.Runtime.CompilerServices
+{
+    internal sealed class UnionAttribute : Attribute;
+    internal interface IUnion { object? Value { get; } }
+}
+#endif
+```
+
+`union X(A, B);`, implicit conversions, exhaustive `switch` and union bodies (members, operators,
+`IEquatable<T>`) then work on `net10.0`. Two limits remain. `System.Text.Json` only understands the real
+`net11.0` runtime types: the polyfilled union serializes as `{"Value":42}` and `Deserialize` throws
+`JsonException`. Value-type cases still box. See `csharp-15-syntax` for the deep dive.
+
+Collection expression arguments (`[with(comparer), ...]`) need no polyfill at all: they are pure
+compiler lowering and compile on `net10.0` once `LangVersion` is `latest`.
 
 ### Wiring it into the TFMs that need it: TFM-condition in the props file, not `#if` at every call site
 
@@ -274,7 +298,8 @@ that go alongside the polyfill.
 - [ ] Every C# 12-15 feature actually used is classified into a tier: compiles as-is, needs a named
       polyfill type, or is impossible on the project's oldest TFM
 - [ ] Polyfills exist only for tier-2 (compiler-lookup) types — never attempted for tier-3
-      (default interface members, static abstract members, `ref struct` generics, unions)
+      (default interface members, static abstract members, `ref struct` generics)
+- [ ] A polyfilled `union` is not sent through `System.Text.Json` on the polyfilled TFM
 - [ ] Every polyfill type is `internal`, guarded with `#if !NET`/`#if !NETx_y_OR_GREATER` so it
       compiles only where the real type is missing
 - [ ] `Compile Include` for the `Polyfills/` folder (or individual files) is conditioned on the

@@ -13,7 +13,7 @@ The skills target .NET 10 and C# 14 by default, with clearly marked sections for
 | Skill | What it covers |
 | --- | --- |
 | [csharp-language-versions](skills/csharp-language-versions) | Working out the effective C# version per target framework, the feature-by-version table, polyfills for older targets, and keeping preview features out of product code. |
-| [csharp-polyfills](skills/csharp-polyfills) | Why `LangVersion` is independent of the target framework, which modern features work on older targets as-is, which need a polyfilled type, which are impossible, and how to write and wire polyfills. |
+| [csharp-polyfills](skills/csharp-polyfills) | Why `LangVersion` is independent of the target framework, which modern features work on older targets as-is, which need a polyfilled type (including C# 15 `union` on `net10.0`), which are impossible, and how to write and wire polyfills. |
 | [csharp-15-syntax](skills/csharp-15-syntax) | C# 15 in depth: union types (and their boxing of value-type cases), `closed` hierarchies, collection expression arguments, extension indexers, labeled `break`/`continue`. |
 | [csharp-pattern-matching](skills/csharp-pattern-matching) | Switch expressions, property/relational/list patterns, real exhaustiveness, and when a pattern stops being readable. |
 | [csharp-modern-types](skills/csharp-modern-types) | Choosing between class, record, record struct and readonly struct; primary constructor pitfalls; `required`, `init`, `with` and the `field` keyword. |
@@ -24,7 +24,7 @@ The skills target .NET 10 and C# 14 by default, with clearly marked sections for
 | [csharp-extension-members](skills/csharp-extension-members) | C# 14 `extension` blocks: extension properties, static members, operators and indexers. |
 | [csharp-generics-modern](skills/csharp-generics-modern) | Generic math, static abstract members, `allows ref struct`, constraints, and avoiding boxing with constrained generics. |
 | [csharp-collections-modern](skills/csharp-collections-modern) | Collection expressions, `params` spans, choosing a collection type, read-only APIs, `CollectionsMarshal`, and LINQ on hot paths. |
-| [csharp-string-handling](skills/csharp-string-handling) | `string.Create` by .NET version, raw and UTF-8 literals, interpolation handlers, `SearchValues`, and comparison rules. |
+| [csharp-string-handling](skills/csharp-string-handling) | `string.Create` by .NET version, raw and UTF-8 literals, byte-first parsing and formatting, interpolation handlers, `SearchValues`, and comparison rules. |
 
 ### Design and correctness
 
@@ -44,7 +44,8 @@ The skills target .NET 10 and C# 14 by default, with clearly marked sections for
 
 | Skill | What it covers |
 | --- | --- |
-| [csharp-performance](skills/csharp-performance) | Hot-path techniques and what the runtime now optimises for you by version, with helper classes in `helpers/`. |
+| [csharp-performance](skills/csharp-performance) | Hot-path techniques and what the runtime now optimises for you by version, the ref-safety trap with `stackalloc` spans, with helper classes in `helpers/`. |
+| [dotnet-11-libraries](skills/dotnet-11-libraries) | .NET 11 base library additions (span ZLib/Deflate/GZip/Zstandard, memory streams, span `Min`/`Max`, vector `Unzip`/`Zip`, `BitArray` spans, `RunePosition`), the Compat helper rule for `net10.0` fallbacks, and managed MD5 for FIPS systems. |
 | [csharp-data-layout](skills/csharp-data-layout) | Cache-friendly data design: struct-of-arrays, field ordering, flat data over inheritance. |
 | [benchmarking](skills/benchmarking) | Trustworthy BenchmarkDotNet numbers, reading real differences, and EventPipe allocation traces. |
 | [performance-bounded-deduplication](skills/performance-bounded-deduplication) | Removing duplication under hard allocation and time budgets, with Roslyn tooling and A/B harnesses. |
@@ -78,7 +79,7 @@ The skills target .NET 10 and C# 14 by default, with clearly marked sections for
 | [dotnet-project-hygiene](skills/dotnet-project-hygiene) | `Directory.Build.props`, `global.json`, language and analysis settings, `.editorconfig`, deterministic builds, and build-file comments. |
 | [dotnet-central-package-management](skills/dotnet-central-package-management) | How CPM works: `Directory.Packages.props`, transitive pinning, `GlobalPackageReference`, lock files, source mapping, and error codes. |
 | [dotnet-slnx](skills/dotnet-slnx) | `.slnx` as the only solution format, migrating from `.sln`, and `.slnf` filters for project subsets. |
-| [dotnet-multi-targeting](skills/dotnet-multi-targeting) | Target framework and platform layout (`Platforms/` folders), framework detection in MSBuild, polyfills, and building Windows targets on Linux/macOS. |
+| [dotnet-multi-targeting](skills/dotnet-multi-targeting) | Target framework and platform layout (`Platforms/` folders), framework detection in MSBuild, polyfills, `Compat/` helpers, and building Windows targets on Linux/macOS. |
 | [dotnet-msbuild-usings](skills/dotnet-msbuild-usings) | Global usings and aliases in MSBuild, framework-conditioned aliases, and aliases as a migration seam between library versions. |
 | [dotnet-run](skills/dotnet-run) | How `dotnet run` works, launch profiles, and running C# inline from stdin or a heredoc in scripts and CI. |
 | [dotnet-file-based-apps](skills/dotnet-file-based-apps) | Throwaway single-file `dotnet run app.cs` programs in place of shell or Python scripts, and their AOT defaults. |

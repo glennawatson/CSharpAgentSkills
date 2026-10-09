@@ -5,7 +5,7 @@ description: Use when a project targets net11.0/C# 15 (or is deciding whether to
 
 # C# 15 / .NET 11 — in-depth reference
 
-Check the project's actual `TargetFramework`/`LangVersion` first — see `csharp-language-versions`. Everything here needs C# 15 (the default for `net11.0`) unless noted; some features also need runtime types that only exist on `net11.0` (unions), while `closed` can be polyfilled onto older targets (see `csharp-polyfills`). Don't change `LangVersion` or the target framework as a side effect of using one of these. RC1-specific gaps are called out explicitly.
+Check the project's actual `TargetFramework`/`LangVersion` first — see `csharp-language-versions`. Everything here needs C# 15 (the default for `net11.0`; `LangVersion=latest` gives C# 15 on an SDK 11 build of any target). Both `union` and `closed` can be polyfilled onto `net10.0` with hand-written marker types, with caveats listed under Availability (see `csharp-polyfills`). Don't change `LangVersion` or the target framework as a side effect of using one of these. RC1-specific gaps are called out explicitly.
 
 ## Union types — how they actually work
 
@@ -98,6 +98,8 @@ This is real work — it's the trade-off for zero boxing on the matching path. `
 
 ### System.Text.Json (.NET 11)
 
+This applies to the real `net11.0` runtime types. A union polyfilled onto `net10.0` does not get this support (see Availability).
+
 Serialization of a union writes the *underlying case value's* JSON with no wrapper or discriminator — `JsonSerializer.Serialize((Pet)new Cat("Tom"))` produces `{"Name":"Tom"}`. **Deserialization back into the union type fails when case types are structurally ambiguous** — deserializing `{"Name":"Tom"}` into `Pet` (cases `Cat`, `Dog`, `Bird`, all `record(string Name)`) throws `JsonException: JSON value type 'Object' is ambiguous for union type 'Pet' because multiple case types can use this value type. Specify a custom type classifier to support deserialization.` Round-tripping works fine when the case types are structurally distinguishable (e.g., `union NumOrText(int, string)` round-trips `42` and `"hello"` correctly). If you need to serialize a union whose cases could collide in shape, give the case types distinct JSON shapes (a discriminator property) or don't rely on default `System.Text.Json` union support yet.
 
 ### What's not implemented / worth re-checking in RC1
@@ -177,7 +179,7 @@ Rules, several non-obvious:
 
 ### Closed hierarchies are more portable than unions
 
-Unlike `union` (which needs `UnionAttribute`/`IUnion` from the .NET 11 runtime and hard-fails on `net10.0` even with `LangVersion=15` forced — see Availability below), **`closed` only needs a marker attribute the compiler can be handed via a local polyfill**. `closed record class` on a `net10.0` project with `LangVersion=15` fails with `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.IsClosedTypeAttribute..ctor'` — but defining that attribute yourself (a plain empty `[AttributeUsage(AttributeTargets.Class)] sealed class IsClosedTypeAttribute : Attribute` in `System.Runtime.CompilerServices`, same trick as the classic `IsExternalInit` polyfill for `init`) makes it compile and run correctly on `net10.0`. This still needs an explicit `LangVersion=15` override on a non-`net11.0` TFM (against the general "don't bump LangVersion" guidance in `csharp-language-versions` — treat this as a deliberate, rare exception only if you actually need exhaustiveness on an older TFM and are willing to own the polyfill) — decide deliberately, it's not free.
+Like `union` (see Availability below), **`closed` only needs a marker attribute the compiler can be handed via a local polyfill**. `closed record class` on a `net10.0` project with `LangVersion=15` fails with `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.IsClosedTypeAttribute..ctor'` — but defining that attribute yourself (a plain empty `[AttributeUsage(AttributeTargets.Class)] sealed class IsClosedTypeAttribute : Attribute` in `System.Runtime.CompilerServices`, same trick as the classic `IsExternalInit` polyfill for `init`) makes it compile and run correctly on `net10.0`. This still needs an explicit `LangVersion=15` override on a non-`net11.0` TFM (against the general "don't bump LangVersion" guidance in `csharp-language-versions` — treat this as a deliberate, rare exception only if you actually need exhaustiveness on an older TFM and are willing to own the polyfill) — decide deliberately, it's not free.
 
 ## Collection expression arguments — deeper notes
 
@@ -185,6 +187,7 @@ Covered at a syntax level in `csharp-collections-modern`. Two points worth the e
 
 - `with(...)` binds to whichever construction path the target type would already use for a collection expression — a matching constructor for `new CollectionType(...)`, a matching parameter set on a `Create` factory method, or (for an interface target like `IDictionary<,>`) a single argument that must implement a well-known BCL comparer interface. It is resolved the same way plain `[...]` construction already picks a strategy; `with(...)` just threads extra arguments through that existing resolution instead of introducing a new one.
 - `List<string> names = [with(capacity: 10), "a", "b"];` produces a list with `Capacity == 10, Count == 2`; `HashSet<string> set = [with(StringComparer.OrdinalIgnoreCase), "a", "A"];` produces `Count == 1` (case-insensitive dedupe applied at construction, not after) — the constructor overload actually gets called with the argument, not just accepted syntactically.
+- It is a compiler feature with no runtime dependency. On SDK 11 with `LangVersion=latest` it compiles and runs on a `net10.0` target: `Dictionary<byte[], int> d = [with(comparer)];`, `[with(capacity: 10), 1, 2]` (capacity 10) and `HashSet<string> s = [with(StringComparer.OrdinalIgnoreCase), "a", "A"]` (count 1) were all verified there. Without `LangVersion`, `net10.0` defaults to C# 14 and fails with `CS9327: Feature 'collection expression arguments' is not available in C# 14.0`.
 - `with(...)` must be the *first* element; there is exactly one per collection expression, and no comma-vs-semicolon ambiguity was chosen deliberately (see the "Design Philosophy" section of the csharplang proposal) precisely to avoid `[1, 2]` (two elements) being confused with an arguments-then-elements list.
 
 ## Extension indexers, labeled break/continue
@@ -209,8 +212,8 @@ Per the general preview-features rule in `csharp-language-versions`: **never use
 | Need | Use |
 | --- | --- |
 | A small fixed set of well-known, non-overlapping **states** with no payload | `enum` + `switch` with a `_`/`default` fallback — cheapest, but remember enum exhaustiveness is not compiler-enforced (see `csharp-pattern-matching`) |
-| A fixed set of **unrelated reference types**, no shared base makes sense, need real compiler exhaustiveness | `union` (e.g. `union Pet(Cat, Dog, Bird);`) — accept the boxing caveat doesn't apply since there's no value-type case |
-| A fixed set of cases that **share real behavior/members** via inheritance, all reference types, compiler-enforced exhaustiveness | `closed record class` hierarchy — no boxing concern either way since it's plain reference-type polymorphism, and it's the more portable choice (polyfillable to older TFMs, unlike `union`) |
+| A fixed set of **unrelated reference types**, no shared base makes sense, need real compiler exhaustiveness | `union` (e.g. `union Pet(Cat, Dog, Bird);`) — accept the boxing caveat doesn't apply since there's no value-type case. On `net10.0` it needs the two-type polyfill from Availability and no JSON round-trip |
+| A fixed set of cases that **share real behavior/members** via inheritance, all reference types, compiler-enforced exhaustiveness | `closed record class` hierarchy — no boxing concern either way since it's plain reference-type polymorphism, and it works with JSON on every TFM (a polyfilled `union` on `net10.0` does not serialize like the real one) |
 | A fixed set of cases where **one or more cases are value types** (`int`, `enum`, small `struct`) **and this is a hot path** | Hand-written struct discriminated union (tag + explicit per-case storage) — the only option with no boxing today; do **not** reach for `union` here |
 | A fixed set of cases where value-type cases exist but it's **not** a hot path (config parsing, one-off API responses, rare branches) | `union` is fine — the boxing is real but immaterial off the hot path; simpler to declare and maintain than a hand-rolled struct union |
 | Need extensibility by consumers outside your assembly/package | Neither `union` nor `closed` — use a classic `abstract`/`sealed` (or `interface`) hierarchy; both C# 15 features are specifically about closing the set |
@@ -220,7 +223,23 @@ Per the general preview-features rule in `csharp-language-versions`: **never use
 
 `net11.0` defaults to `LangVersion` 15: a file-based app with no explicit TFM/LangVersion on the RC1 SDK reports `TargetFramework: net11.0, LangVersion: 15.0` via `dotnet build -getProperty:`.
 
-- **`union` cannot be polyfilled onto an older TFM.** `net10.0` + explicit `LangVersion=15` fails a `union` declaration with `error CS0518: Predefined type 'System.Runtime.CompilerServices.IUnion' is not defined or imported` and `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.UnionAttribute..ctor'` — these are real runtime types shipped starting .NET 11 Preview 5, not synthesizable by the compiler the way `IsExternalInit` is for `init`. A union type is effectively `net11.0`+ only, full stop, even if you're willing to hand-write the attribute/interface yourself (the compiler explicitly declines to synthesize them per the speclet's resolved open question — and even if it compiled, consumers like `System.Text.Json`'s union support key off the real runtime contract, not a look-alike).
+- **`union` CAN be polyfilled onto `net10.0`.** Without help, a `union` declaration on `net10.0` fails with `error CS0518: Predefined type 'System.Runtime.CompilerServices.IUnion' is not defined or imported` and `error CS0656: Missing compiler required member 'System.Runtime.CompilerServices.UnionAttribute..ctor'`. The compiler does not synthesize those two types, but it accepts a copy declared in your own assembly, the same way `IsExternalInit` works for `init`. Verified on SDK `11.0.100-rc.1` with `net10.0;net11.0` and `LangVersion=latest`: the polyfill below makes `union X(A, B);`, implicit conversions and exhaustive `switch` compile and run correctly on `net10.0`, and the same file builds on `net11.0` because the `#if` removes the copy there.
+
+  ```csharp
+  #if !NET11_0_OR_GREATER
+  namespace System.Runtime.CompilerServices
+  {
+      internal sealed class UnionAttribute : Attribute;
+      internal interface IUnion { object? Value { get; } }
+  }
+  #endif
+  ```
+
+  Needs `LangVersion=latest` (or `15`) on the `net10.0` leg, because `net10.0` defaults to C# 14. Remaining caveats:
+  - **`System.Text.Json` needs the real runtime type.** On `net11.0` a `union NumOrText(int, string)` serializes as `42` and round-trips. On the polyfilled `net10.0` leg the same type serializes as `{"Value":42}` and `Deserialize` throws `JsonException`. Do not send a polyfilled union through JSON; write a converter or map to a DTO.
+  - **Value-type cases still box** on both TFMs (`object? Value`), as in the boxing section above.
+  - Keep the polyfill `internal` in each assembly (see `csharp-polyfills`). Consuming a public polyfilled union from another assembly on `net10.0` was not tested.
+  - A union declaration can have a body: members, `IEquatable<T>`, operators and extra properties all compile and work on both TFMs (verified with `==`, `Equals`, and a property that switches over `Value`).
 - **`closed` hierarchies *can* be polyfilled** onto `net10.0`/earlier with an explicit `LangVersion=15` and a hand-written `IsClosedTypeAttribute` marker, as shown above. Still requires bumping `LangVersion` past the TFM's implied default, which is an exception to the general "don't do that" rule in `csharp-language-versions` — only do it as a deliberate call, not casually.
 - Collection expression arguments, extension indexers, and labeled `break`/`continue` are pure compiler/IL features with no runtime-type dependency — they need `LangVersion` 15 but not specifically `net11.0`'s runtime, the same category as most C# 12–14 features per the polyfill table in `csharp-language-versions`.
 
@@ -232,7 +251,8 @@ Per the general preview-features rule in `csharp-language-versions`: **never use
 - [ ] `closed` hierarchy used (not `union`) when cases share real inherited behavior and are reference types
 - [ ] Verified exhaustiveness warnings actually fire (CS8509) for both `union`/`closed` switches before relying on "the compiler will catch missing cases"
 - [ ] Any `union`/`closed` type intended for cross-assembly extensibility replaced with a classic `abstract`/`sealed` hierarchy — both features are specifically about closing the set
-- [ ] `System.Text.Json` round-tripping of a `union` verified empirically if case types could be structurally ambiguous — don't assume deserialization "just works"
+- [ ] `System.Text.Json` round-tripping of a `union` verified empirically if case types could be structurally ambiguous — don't assume deserialization "just works"; never round-trip a union polyfilled onto `net10.0`
+- [ ] A `union` on a `net10.0` leg uses the `internal` `UnionAttribute`/`IUnion` polyfill inside `#if !NET11_0_OR_GREATER`, with `LangVersion=latest`
 - [ ] `with(...)` in a collection expression is the first element, matches an actual constructor/factory shape on the target type
 - [ ] No `LangVersion=preview` memory-safety construct (`unsafe(expr)`, pointer relaxations, `safe`) present outside a throwaway spike
 - [ ] Labeled `break`/`continue` used instead of a flag variable or `goto` once the project is on `net11.0`+/C# 15 (IDE0410)

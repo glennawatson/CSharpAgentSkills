@@ -1,6 +1,6 @@
 ---
 name: csharp-string-handling
-description: Use when writing or reviewing C#/.NET string handling — raw string literals and interpolated raw strings, custom interpolated string handlers, UTF-8 literals, string.Create (including the .NET 9+ ref-struct state and initial-buffer interpolation overloads), CompositeFormat for repeated formats, SearchValues, correct StringComparison choice, AsSpan slicing vs Substring, and StringBuilder vs interpolation.
+description: Use when writing or reviewing C#/.NET string handling — raw string literals and interpolated raw strings, custom interpolated string handlers, UTF-8 literals, byte-first parsing and formatting (int.TryParse on UTF-8 bytes, Utf8.TryWrite, Convert.FromHexString on bytes, byte-span alternate lookup), string.Create (including the .NET 9+ ref-struct state and initial-buffer interpolation overloads), CompositeFormat for repeated formats, SearchValues, correct StringComparison choice, AsSpan slicing vs Substring, and StringBuilder vs interpolation.
 ---
 
 # String handling (C# 13/14/15, .NET 9–11)
@@ -72,6 +72,42 @@ ReadOnlySpan<byte> header = "HTTP/1.1 200 OK\r\n"u8;
 ```
 
 Use it for protocol constants, magic bytes, and comparisons against byte-oriented APIs (`Utf8JsonWriter`, sockets, `SearchValues<byte>`) instead of encoding a `string` literal at runtime.
+
+## Byte-first parsing and formatting (no strings)
+
+Parsers for byte formats (PDF, HTTP, protocols) can stay in `ReadOnlySpan<byte>` from input to number. Behaviour below was verified on `net10.0` (SDK 11 RC1). Allocation was not measured here, so benchmark before claiming zero.
+
+| Need | API | Notes |
+| --- | --- | --- |
+| Parse a number from UTF-8 bytes | `int.TryParse(ReadOnlySpan<byte>, NumberStyles, IFormatProvider, out int)` (`IUtf8SpanParsable`, .NET 8+) | `"-123"u8` with `AllowLeadingSign` gives -123; `"12x"u8` with `NumberStyles.None` fails. It needs the whole token. `double.TryParse` has the same shape; `AllowLeadingSign \| AllowDecimalPoint` accepts `-.5` and rejects `1e5` |
+| Format into bytes | `Utf8.TryWrite(Span<byte>, IFormatProvider, $"...", out int written)` | An interpolated string writes straight into the buffer. A too-small buffer returns `false` and `written` is 0. Pass `CultureInfo.InvariantCulture` for protocol text |
+| Decode hex text | `Convert.FromHexString(ReadOnlySpan<byte> utf8, Span<byte> destination, out int consumed, out int written)` returns `OperationStatus` | .NET 10 and later (it does not compile on `net9.0`). `"48656C6C6F"u8` gives `Done` (consumed 10, written 5). White space gives `InvalidData`. An odd digit count gives `NeedMoreData`. A short destination gives `DestinationTooSmall`. There is no `TryFromHexString` for bytes |
+| Look up a dictionary key from a byte span | `GetAlternateLookup<ReadOnlySpan<byte>>()` on `Dictionary<byte[], T>` and `FrozenDictionary<byte[], T>` (.NET 9+) | Needs a comparer that implements `IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>`. The built-in string comparers only offer `ReadOnlySpan<char>` |
+
+Without the interface on the comparer, `TryGetAlternateLookup` returns `false` and `GetAlternateLookup` throws `InvalidOperationException`. A comparer for byte keys:
+
+```csharp
+sealed class ByteArrayComparer : IEqualityComparer<byte[]>, IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
+{
+    public bool Equals(byte[]? x, byte[]? y) => x.AsSpan().SequenceEqual(y);
+    public int GetHashCode(byte[] obj) => GetHashCode((ReadOnlySpan<byte>)obj);
+    public bool Equals(ReadOnlySpan<byte> alternate, byte[] other) => alternate.SequenceEqual(other);
+    public int GetHashCode(ReadOnlySpan<byte> alternate)
+    {
+        var hash = new HashCode();
+        hash.AddBytes(alternate);
+        return hash.ToHashCode();
+    }
+
+    public byte[] Create(ReadOnlySpan<byte> alternate) => alternate.ToArray();
+}
+
+var names = new Dictionary<byte[], int>(new ByteArrayComparer());
+var lookup = names.GetAlternateLookup<ReadOnlySpan<byte>>();
+lookup.TryGetValue(tokenBytes, out int id);   // no byte[] allocated for the probe
+```
+
+A `FrozenDictionary` takes the same comparer through `ToFrozenDictionary(source, comparer)`. Keep one `HashCode` scheme in both hash methods or lookups miss.
 
 ## `string.Create` for single-allocation building
 
@@ -166,7 +202,7 @@ Build the `SearchValues` instance once (`static readonly`), reuse it for every s
 
 .NET 11 adds `Contains`/`StartsWith`/`EndsWith`/`IndexOf`/`LastIndexOf`/`Replace`/`Split`/`Trim`(`Start`/`End`) overloads on `string` that take a `System.Text.Rune` (with `StringComparison` overloads too). Use these instead of hand-rolling surrogate-pair-aware char comparisons when the text may contain characters outside the BMP (emoji, many non-Latin scripts) — `"😀".Contains('😀')`-style code using `char` silently breaks on surrogate pairs; the `Rune` overloads don't.
 
-`System.Text.Unicode.Utf8.IsValid`/`Utf16.IsValid` (`ReadOnlySpan<byte|char> -> bool`) and the new `IndexOfInvalidSubsequence` methods let a parser/validator check or locate encoding errors directly on a span — no need to wrap an `Encoding.GetString`/`GetBytes` call in a try/catch just to validate input.
+`System.Text.Unicode.Utf8.IsValid` (.NET 8), `Utf16.IsValid` (new in 11) and the new `Utf8.IndexOfInvalidSubsequence`/`Utf16.IndexOfInvalidSubsequence` methods (all on spans) let a parser/validator check or locate encoding errors directly — no need to wrap an `Encoding.GetString`/`GetBytes` call in a try/catch just to validate input. `RunePosition.EnumerateUtf8`/`EnumerateUtf16` walk a span by code point and report each rune's `StartIndex`, `Length` and `WasReplaced`. See `dotnet-11-libraries`.
 
 ## `StringComparison` — get this right
 
@@ -197,24 +233,21 @@ Only materialize a `string` (`.ToString()` on the slice) at the point you actual
 
 ## .NET 11: wrap in-memory data as a `Stream` without copying
 
-`new MemoryStream(Encoding.UTF8.GetBytes(s))` allocates twice: once for the encoded byte array, once for the `MemoryStream`'s internal buffer copy. .NET 11 adds `Stream` types (`System.IO`) that wrap existing memory directly:
+`new MemoryStream(byte[])` already shares the array without copying (verified: a write to the array shows up in the stream). It needs an array, though, and it is writable. .NET 11 adds `Stream` types that wrap `Memory<byte>` and `ReadOnlySequence<byte>` directly:
 
 ```csharp
-// ❌ encodes into a new byte[], MemoryStream copies it again internally
+// Needs a byte[]; building one from text allocates it.
 Stream s = new MemoryStream(Encoding.UTF8.GetBytes(text));
 
-// ✅ StringStream encodes on read, no intermediate byte[] materialized up front
-Stream s = new StringStream(text, Encoding.UTF8);
-
-// ✅ wrap an existing buffer/memory with no copy at all
-Stream s = new ReadOnlyMemoryStream(existingBytes.AsMemory());
-Stream s = new WritableMemoryStream(existingBuffer);          // write into a caller-owned buffer
-Stream s = new ReadOnlySequenceStream(existingSequence);       // wrap a ReadOnlySequence<byte> (e.g. from a pipe)
+// Wrap memory you already have, including a slice of a pooled or mapped buffer.
+Stream s = new ReadOnlyMemoryStream(existingBytes.AsMemory(offset, count));   // System.IO
+Stream s = new WritableMemoryStream(existingBuffer);                          // System.IO, caller-owned buffer
+Stream s = new ReadOnlySequenceStream(existingSequence);                      // System.Buffers, e.g. from a pipe
 ```
 
-- **`StringStream`** wraps a `string` + `Encoding` and streams the encoded bytes out lazily — use it for "I have a string, something wants a `Stream`" (an HTTP request body, a JSON reader) instead of pre-encoding into a byte array.
-- **`ReadOnlyMemoryStream`**/**`WritableMemoryStream`** wrap an existing `ReadOnlyMemory<byte>`/`Memory<byte>` with no copy — use these instead of `MemoryStream` when you already have the buffer (from `ArrayPool`, a `Span`-backed source) and just need `Stream`-shaped access to it.
-- **`ReadOnlySequenceStream`** wraps a `ReadOnlySequence<byte>` (the type `System.IO.Pipelines`/`PipeReader` hands you) as a `Stream` without flattening the segments into one buffer first.
+- **`ReadOnlyMemoryStream`**/**`WritableMemoryStream`** wrap an existing `ReadOnlyMemory<byte>`/`Memory<byte>` with no copy and no `ToArray()` for memory that is not a whole array. The read-only one rejects writes with `NotSupportedException`. Use them when you already have the buffer (from `ArrayPool`, a `Span`-backed source) and need `Stream`-shaped access to it.
+- **`ReadOnlySequenceStream`** (namespace `System.Buffers`) wraps a `ReadOnlySequence<byte>` (the type `System.IO.Pipelines`/`PipeReader` hands you) as a `Stream` without flattening the segments into one buffer first.
+- There is no `StringStream` in .NET 11 RC1 (checked against the runtime assemblies). To stream a string, encode it with `Encoding.UTF8.GetBytes` into a pooled buffer.
 - All are read/write-capable where it makes sense but don't own or grow the backing memory the way `MemoryStream` does — reach for `MemoryStream` only when you actually need an owned, growable buffer.
 
 ## `StringBuilder` vs. interpolation

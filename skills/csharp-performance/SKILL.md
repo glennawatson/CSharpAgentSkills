@@ -47,6 +47,32 @@ Allocation is the usual enemy: every temporary is future GC work. Observed acros
 - **`[MethodImpl(MethodImplOptions.AggressiveInlining)]`** on tiny hot helpers/getters to remove call overhead. Don't sprinkle it — only where a profile shows the call cost.
 - **Pool transient buffers/builders** — `ArrayPool<T>.Shared.Rent(...)` in `try/finally`, or a builder pool wrapped in a `readonly struct` rental that returns on `Dispose`. → `PooledStringBuilder` helper.
 
+### Ref structs that hold `stackalloc` spans: the ref-safety trap
+
+A `ref struct` whose field holds a stack-allocated `Span<T>` cannot have an instance method called with a `ref` argument of another `ref struct` type that can hold a span. The compiler assumes the receiver's span could be stored into the argument and reports `CS8352` ("may expose referenced variables outside of their declaration scope") and `CS8350` ("this combination of arguments is disallowed"). Verified on SDK 11 RC1 with this shape:
+
+```csharp
+Span<byte> a = stackalloc byte[16];
+var writer = new Writer(a);      // ref struct, field: Span<byte>
+var sink = new Sink();           // ref struct with a Span<byte> field
+writer.Emit(ref sink);           // CS8352 + CS8350
+```
+
+What does and does not fix it (all tried):
+
+| Change | Result |
+| --- | --- |
+| `scoped ref Sink` on the parameter | Still fails. `scoped` limits the reference, not the span stored inside the referenced struct |
+| `scoped ref Writer` on a `ref Writer` parameter | Still fails, same reason |
+| Caller-provided `Span<byte>` passed to the constructor | Still fails when the struct then takes a `ref` to another span-holding ref struct. It is not a fix on its own |
+| Back the `ref struct` with a rented `byte[]` (`ArrayPool<byte>.Shared.Rent`) and build spans on demand | Compiles. Return the array in `finally` |
+| Make the other type a class or an ordinary (non-ref) struct | Compiles (both verified). A `ref struct` that only holds an `int` still fails |
+| Mark the span parameter that is only read as `scoped Span<T>` or `scoped ReadOnlySpan<T>` on the receiving method, and pass ref structs by value as `scoped Writer w` | Compiles. The method promises not to store the span |
+
+Pick the array-backed version when the ref struct is long-lived or passed around. Use `scoped` span parameters for short helper methods that only read. Do not keep adding `scoped ref` expecting it to settle the error.
+
+An unmanaged struct type can be `stackalloc`'d by the caller and handed in as a `Span<T>` (for example `Span<Pair> pairs = stackalloc Pair[4];`, passed to `Sum(scoped ReadOnlySpan<Pair>)`). Use this when an analyzer objects to the field in an `[InlineArray]` struct. The caller owns the memory and the callee stays allocation-free.
+
 ## 2. Cache the expensive stuff
 
 - **`static readonly Type Type = typeof(T)`** per closed generic — the JIT specializes one instance per `T`; hot paths skip repeated `typeof`/metadata cost. → `TypeCache<T>` helper.

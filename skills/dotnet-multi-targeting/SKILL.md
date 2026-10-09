@@ -1,6 +1,6 @@
 ---
 name: dotnet-multi-targeting
-description: Use when a library needs to target more than one TFM (netstandard2.0, multiple net8.0/9.0/10.0-style TFMs, or platform TFMs like -android/-ios/-maccatalyst/-windows10.0.x) — choosing the TFM list, laying out platform-specific source so it stays visible in the IDE but compiles per TFM, detecting TFM/platform in MSBuild conditions, polyfilling APIs missing on older targets, and compiling net*-windows/net4x TFMs from a Linux or macOS host with `EnableWindowsTargeting`.
+description: Use when a library needs to target more than one TFM (netstandard2.0, multiple net8.0/9.0/10.0-style TFMs, or platform TFMs like -android/-ios/-maccatalyst/-windows10.0.x) — choosing the TFM list, laying out platform-specific source so it stays visible in the IDE but compiles per TFM, detecting TFM/platform in MSBuild conditions, polyfilling APIs missing on older targets, keeping `#if NET11_0_OR_GREATER` branches inside `Compat/` helpers, and compiling net*-windows/net4x TFMs from a Linux or macOS host with `EnableWindowsTargeting`.
 ---
 
 # .NET multi-targeting
@@ -141,7 +141,44 @@ Under central package management (`dotnet-project-hygiene`), a package that ship
   </ItemGroup>
   ```
 
-- **`#if NET*_OR_GREATER`** for API gaps that are a few lines, not a whole type — call the modern API when available, fall back otherwise. See `csharp-language-versions` for which C# language features need a polyfilled runtime type versus compiling on `LangVersion` alone, and verify polyfill coverage against your *lowest* TFM.
+- **`#if NET*_OR_GREATER`** for API gaps that are a few lines, not a whole type — call the modern API when available, fall back otherwise. See `csharp-language-versions` for which C# language features need a polyfilled runtime type versus compiling on `LangVersion` alone, and verify polyfill coverage against your *lowest* TFM. For anything bigger than a few lines, use a Compat helper (next section).
+
+## Compat helpers: keep `#if` out of feature code
+
+When a newer TFM has a better API (for example .NET 11's span-based `ZLibDecoder`) and the older TFM needs a fallback, put every `#if NET11_0_OR_GREATER` branch in one small static class under a `Compat/` folder. Both branches share one signature. Feature code calls the helper and never contains `#if`.
+
+```csharp
+// Compat/ZLibCompat.cs
+internal static class ZLibCompat
+{
+#if NET11_0_OR_GREATER
+    [ThreadStatic] private static ZLibDecoder? _decoder;
+#endif
+
+    public static OperationStatus Inflate(ReadOnlyMemory<byte> source, Span<byte> destination, out int consumed, out int written)
+    {
+#if NET11_0_OR_GREATER
+        ZLibDecoder decoder = _decoder ??= new ZLibDecoder();
+        decoder.Reset();
+        return decoder.Decompress(source.Span, destination, out consumed, out written);
+#else
+        // ZLibStream over a MemoryStream; map InvalidDataException to OperationStatus.InvalidData.
+        ...
+#endif
+    }
+}
+
+// Feature code, no #if:
+OperationStatus status = ZLibCompat.Inflate(streamBytes, buffer, out _, out int n);
+```
+
+The full working file is in `dotnet-11-libraries` (`ZLibCompat.cs`). Rules:
+
+- Pick the signature the **new** API makes natural, then make the fallback honour it. A span-in, status-out shape hides the difference between `ZLibDecoder` and `ZLibStream`.
+- Where the fallback cannot match the new behaviour, say so in the helper's doc comment. Here the `net10.0` path cannot report `NeedMoreData` for truncated input (it returns `Done`) and allocates about 312 bytes per call where the `net11.0` path allocates nothing. Both were measured.
+- One Compat file per API family. Keep the class `internal` and `static`.
+- Test both branches: run the same tests for every TFM (`dotnet test -f net10.0`, then `-f net11.0`).
+- Prefer this over the `Using Alias` trick when the two branches differ in shape, state or error handling. Use an alias only when the two APIs have the same name and signature.
 
 ## The `Using Alias` trick: one call site, TFM-specific binding
 
@@ -234,6 +271,7 @@ CI pattern: Linux legs run the full `dotnet build`/`dotnet restore` across every
 - [ ] Large platform-specific code lives in a `Platforms/<name>/` folder switched by TFM condition (`Compile Remove` + `None Include` + per-TFM `Compile Include`), not scattered `#if`
 - [ ] Platform/version checks use `GetTargetPlatformIdentifier`/`IsTargetFrameworkCompatible` over ad hoc `StartsWith` chains where the question is really a version floor
 - [ ] Polyfills for older TFMs verified against the *lowest* TFM, not assumed from the highest (`csharp-language-versions`)
+- [ ] Newer-API branches (`#if NET11_0_OR_GREATER`) live only in `Compat/` helpers with one signature; no `#if` in feature code
 - [ ] Any `Using Alias` TFM-conditional bindings documented at the alias site and cross-referenced to `dotnet-msbuild-usings`
 - [ ] Whole-solution `dotnet build`/`dotnet test` covers every TFM in CI; no TFM silently untested
 - [ ] AOT/trim settings checked per TFM where relevant — see `csharp-aot-trimming`

@@ -32,11 +32,12 @@ The spread element `..` works on any type enumerable and lets the compiler pick 
 
 ## .NET 11 / C# 15 — collection expression arguments
 
-Check `TargetFramework`/`LangVersion` first (see `csharp-language-versions`) — needs `net11.0`+/C# 15; don't raise `LangVersion` on an older-targeted project just for this. A collection expression can now take a leading `with(...)` argument list to configure the collection being built — capacity, comparer, or both — instead of falling back to imperative construction:
+Check `TargetFramework`/`LangVersion` first (see `csharp-language-versions`) — needs C# 15. It is a compiler feature with no runtime dependency, so it also compiles on a `net10.0` target when `LangVersion` is `latest` on SDK 11 (verified); at the default C# 14 it fails with `CS9327`. A collection expression can now take a leading `with(...)` argument list to configure the collection being built — capacity, comparer, or both — instead of falling back to imperative construction:
 
 ```csharp
 List<string> names = [with(capacity: 100), .. values];              // pre-sized List<T>
 HashSet<string> set = [with(StringComparer.OrdinalIgnoreCase), "a", "A"]; // custom comparer, still target-typed
+Dictionary<byte[], int> map = [with(new ByteArrayComparer())];            // comparer only, no elements
 ```
 
 `with(...)` must be the first element and only applies when the target type has a matching constructor/factory shape (e.g. `List<T>(int capacity)`, `HashSet<T>(IEqualityComparer<T>)`) — it's resolved the same way collection-expression construction already is, just with arguments threaded through instead of a bare `new()`. Prefer this over `new List<T>(capacity) { ... }`/`new HashSet<T>(comparer) { ... }` boilerplate once the project targets `net11.0`+.
@@ -51,7 +52,7 @@ HashSet<string> set = [with(StringComparer.OrdinalIgnoreCase), "a", "A"]; // cus
   (There's also a `Create(Func<T?,T?,bool> equals, Func<T,int>? getHashCode = null)` overload for a fully custom comparison.)
 - **LINQ `FullJoin`** — outer join that keeps unmatched rows from *both* sides (filling the missing side with `default`/a supplied value), where `Join` only keeps matches and `GroupJoin` groups matches per outer element.
 - **Tuple-returning `Join`/`GroupJoin` overloads** — skip the result-selector lambda when you just want the pairing: `left.Join(right, l => l.Key, r => r.Key)` returns `(TLeft, TRight)` tuples directly; `left.GroupJoin(right, l => l.Key, r => r.Key)` returns `IEnumerable<IGrouping<TKey, TRight>>` directly, no selector needed.
-- **`BitArray` span constructors** — `new BitArray(ReadOnlySpan<bool> values)` alongside the existing `bool[]`/`int[]`/`byte[]` constructors, so a `stackalloc`/slice can seed a `BitArray` without an intermediate array.
+- **`BitArray` span constructors** — `new BitArray(ReadOnlySpan<bool> values)` alongside the existing `bool[]`/`int[]`/`byte[]` constructors, so a `stackalloc`/slice can seed a `BitArray` without an intermediate array. The `ReadOnlySpan<byte>` form is LSB first: byte `0x01` sets bit 0 and `0x80` sets bit 7. Formats that count bits from the most significant bit (PDF and TIFF bitmaps) need shifts instead. See `dotnet-11-libraries`.
 
 ## `params` collections and spans (C# 13)
 
@@ -200,7 +201,7 @@ If a method returns `IEnumerable<T>` and the caller might enumerate more than on
 
 - [ ] Collection-expression target type is the one you actually want (`IReadOnlyList<T>`/`IEnumerable<T>` are *not* `List<T>`)
 - [ ] `params ReadOnlySpan<T>` on hot-path variadic APIs, not `async`/iterator methods
-- [ ] On `net11.0`+/C# 15: `[with(capacity: n), ...]`/`[with(comparer), ...]` used instead of `new List<T>(n) { ... }` boilerplate where the TFM allows it
+- [ ] On C# 15 (`net11.0`, or `net10.0` with `LangVersion=latest` on SDK 11): `[with(capacity: n), ...]`/`[with(comparer), ...]` used instead of `new List<T>(n) { ... }` boilerplate where the TFM allows it
 - [ ] `Dictionary`/`HashSet` by default; `Frozen*` only in a long-running process, with a benchmark that includes construction cost
 - [ ] `Immutable*` only where structural sharing/immutability is actually needed
 - [ ] Collections declared as concrete types (`List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `T[]`), never `IList<T>`/`ICollection<T>`/`IDictionary<TKey, TValue>`/`ISet<T>`

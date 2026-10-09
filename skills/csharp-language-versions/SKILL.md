@@ -34,6 +34,8 @@ dotnet build -getProperty:LangVersion
 dotnet build -getProperty:TargetFramework
 ```
 
+`LangVersion=latest` means the newest version the installed SDK supports, regardless of the TFM: on SDK `11.0.100-rc.1` a `net10.0` project with `latest` compiles C# 15 features. A project that sets `latest` therefore changes its dialect when the SDK changes, so pin `global.json` (see `dotnet-project-hygiene`).
+
 **Change `LangVersion` or `TargetFramework` deliberately, never as a side effect.** Raising `LangVersion` above the TFM default (commonly `latest` on `netstandard2.0`/`net4x` with polyfills) is a valid repo-wide choice; see `csharp-polyfills` for which features then work. Retargeting changes the supported runtime matrix and is a bigger decision. Either way, make it its own change in `Directory.Build.props`, not a bump buried inside an unrelated edit. Within an existing change, use what the project's current LangVersion and TFM support.
 
 ## Feature-by-version reference (C# 12–15)
@@ -54,8 +56,8 @@ dotnet build -getProperty:TargetFramework
 | `nameof` unbound generic type support | 14 | |
 | Implicit `Span<T>`/`ReadOnlySpan<T>` conversions widened | 14 | |
 | `Lock` type get first-class `lock` statement support | 13 (type in .NET 9)/14 (compiler pattern-matches it) | Compiler uses the efficient `Lock` API automatically when `System.Threading.Lock` is present and locked with a plain `lock` statement |
-| Collection expression arguments (`[with(capacity: n), ...]`) | 15 | See `csharp-collections-modern` |
-| Union types (`union Pet(Cat, Dog, Bird);`) | 15 | See `csharp-modern-types`, `csharp-pattern-matching` |
+| Collection expression arguments (`[with(capacity: n), ...]`) | 15 | Compiler-only, works on `net10.0` with `LangVersion=latest` on SDK 11. See `csharp-collections-modern` |
+| Union types (`union Pet(Cat, Dog, Bird);`) | 15 | Polyfillable onto `net10.0` (two internal types). See `csharp-15-syntax`, `csharp-polyfills` |
 | Closed hierarchies (`closed record class`) | 15 | See `csharp-modern-types`, `csharp-pattern-matching` |
 | Extension indexers | 15 | See `csharp-extension-members` |
 | Labeled `break`/`continue` | 15 | See below |
@@ -89,7 +91,8 @@ patterns, PolySharp). Short version: targeting `netstandard2.0` or another older
   - `required` members need `RequiredMemberAttribute`/`SetsRequiredMembersAttribute` (and `CompilerFeatureRequiredAttribute`) — missing on `netstandard2.0`; add the well-known polyfill shim (a same-named type in your own assembly satisfies the compiler) or reference a polyfill package.
   - `init` accessors need `System.Runtime.CompilerServices.IsExternalInit` — same story, trivially polyfilled with an empty marker type in the target namespace.
   - Records need `IsExternalInit` for `init` members and cooperate best on `netstandard2.1`+/`net5.0`+ — heavier records features (positional records, `with`) also need runtime support that gets thinner the older the TFM.
-  - Unions (C# 15) need `System.Runtime.CompilerServices.UnionAttribute`/`IUnion` — not present before .NET 11's runtime; a union type is effectively `net11.0`+ only even with a polyfilled attribute, since consumers (`System.Text.Json`, etc.) key off the real runtime contract.
+  - Unions (C# 15) need `System.Runtime.CompilerServices.UnionAttribute`/`IUnion`. They are not in the `net10.0` BCL, but an `internal` copy inside `#if !NET11_0_OR_GREATER` makes `union X(A, B);` compile and pattern-match on `net10.0` (verified with `LangVersion=latest` on SDK 11). Caveats: `System.Text.Json` union support needs the real `net11.0` types, and value-type cases box. See `csharp-polyfills` and `csharp-15-syntax`.
+  - Collection expression arguments (`[with(...)]`, C# 15) need no runtime type. They compile on `net10.0` once `LangVersion` is `latest` on SDK 11, and fail with `CS9327` at the default C# 14.
   - `Index`/`Range` (`^`, `..`) need `System.Index`/`System.Range` — polyfillable, ships in `Microsoft.Bcl.Numerics`-style shim packages for old TFMs.
   - `params ReadOnlySpan<T>`/`Span<T>` need the `System.Memory`-family types present — fine on `netstandard2.1`+, needs the `System.Memory` package on `netstandard2.0`.
 
